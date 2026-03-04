@@ -84,10 +84,10 @@ def analyze(root: str | Path) -> dict:
             # Only include edges where the target file is in our project
             if edge['resolved'] and edge['to'] in nodes:
                 all_edges.append({
-                    'from': edge['from'],
-                    'to':   edge['to'],
-                    'type': edge['type'],
-                    'line': edge['line'],
+                    'source': edge['from'],
+                    'target': edge['to'],
+                    'type':   edge['type'],
+                    'line':   edge['line'],
                 })
 
     # ── Step 4: Deduplicate edges ────────────────────────────────────────────
@@ -95,7 +95,7 @@ def analyze(root: str | Path) -> dict:
     unique_edges: list[dict] = []
 
     for edge in all_edges:
-        key = (edge['from'], edge['to'])
+        key = (edge['source'], edge['target'])
         if key not in seen_edges:
             seen_edges.add(key)
             unique_edges.append(edge)
@@ -105,8 +105,8 @@ def analyze(root: str | Path) -> dict:
     outbound: dict[str, int] = {nid: 0 for nid in nodes}
 
     for edge in unique_edges:
-        outbound[edge['from']] = outbound.get(edge['from'], 0) + 1
-        inbound[edge['to']]    = inbound.get(edge['to'], 0) + 1
+        outbound[edge['source']] = outbound.get(edge['source'], 0) + 1
+        inbound[edge['target']]  = inbound.get(edge['target'], 0) + 1
 
     for nid in nodes:
         nodes[nid]['inbound']  = inbound.get(nid, 0)

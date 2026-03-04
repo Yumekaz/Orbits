@@ -1,0 +1,56 @@
+{
+  "nodes": [
+    {
+      "id": "analyzer.py",
+      "filepath": "analyzer.py",
+      "name": "analyzer.py",
+      "language": "python",
+      "size": 7862,
+      "dir": ".",
+      "inbound": 0,
+      "outbound": 2
+    },
+    {
+      "id": "crawler.py",
+      "filepath": "crawler.py",
+      "name": "crawler.py",
+      "language": "python",
+      "size": 3009,
+      "dir": ".",
+      "inbound": 1,
+      "outbound": 0
+    },
+    {
+      "id": "extractor.py",
+      "filepath": "extractor.py",
+      "name": "extractor.py",
+      "language": "python",
+      "size": 7731,
+      "dir": ".",
+      "inbound": 1,
+      "outbound": 0
+    }
+  ],
+  "edges": [
+    {
+      "source": "analyzer.py",
+      "target": "crawler.py",
+      "type": "import_from",
+      "line": 26
+    },
+    {
+      "source": "analyzer.py",
+      "target": "extractor.py",
+      "type": "import_from",
+      "line": 27
+    }
+  ],
+  "meta": {
+    "root": "C:\\Users\\Mihir\\OneDrive\\Desktop\\phase0",
+    "total_files": 3,
+    "total_edges": 2,
+    "languages": [
+      "python"
+    ]
+  }
+}
