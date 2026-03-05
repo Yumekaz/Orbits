@@ -178,12 +178,15 @@ svg#graph:active{cursor:grabbing}
       <div class="tb-stat"><span class="tv ov" id="s-orphans">—</span><span class="tl">dead</span></div>
       <div class="tb-stat"><span class="tv yv" id="s-cycles">—</span><span class="tl">cycles</span></div>
       <div class="tb-stat"><span class="tv gv" id="s-health">—</span><span class="tl">health</span></div>
+      <div class="tb-stat"><span class="tv" id="s-resolved" style="color:#4a5a80">—</span><span class="tl">resolved</span></div>
+      <div class="tb-stat"><span class="tv" id="s-langs" style="color:#4a5a80">—</span><span class="tl">languages</span></div>
     </div>
     <div id="tb-controls">
       <button class="btn on"  id="btn-waste">waste</button>
       <button class="btn on"  id="btn-insp">inspector</button>
       <button class="btn on"  id="btn-labels">labels</button>
       <button class="btn"     id="btn-ht">hide tests</button>
+      <button class="btn"     id="btn-lang">all languages</button>
       <button class="btn"     id="btn-ho">hide orphans</button>
       <button class="btn"     id="btn-reset">reset</button>
     </div>
@@ -239,7 +242,7 @@ svg#graph:active{cursor:grabbing}
         ⚠ <span id="cycle-text"></span>
       </div>
       <div id="health-pill" class="hidden">
-        Health <span id="hnum">—</span>/100
+        Health <span id="hnum">—</span>/100 &nbsp;·&nbsp; <span id="elapsed" style="color:var(--muted);font-size:9px"></span>
       </div>
       <div id="toast"></div>
     </div>
@@ -262,6 +265,10 @@ svg#graph:active{cursor:grabbing}
         <div class="it">Imported by (inbound)</div>
         <div id="iin"></div>
       </div>
+      <div class="is" id="res-section" style="display:none">
+        <div class="it">Import Resolution</div>
+        <div id="res-stats"></div>
+      </div>
       <div class="is">
         <div class="it">Legend</div>
         <div class="leg">
@@ -280,6 +287,7 @@ svg#graph:active{cursor:grabbing}
 <script>
 let G=null,simN=[],simE=[],sim=null,selId=null;
 let showLabels=true,hideTests=false,hideOrphans=false,zb=null;
+let activeLangs=null; // null = all, Set = filter to these
 
 const CC={
   CONNECTED:{f:'rgba(0,229,255,.15)',s:'#00e5ff'},
@@ -293,10 +301,21 @@ const CC={
 
 function cc(cls){return CC[cls]||CC.ORPHAN}
 
+const LC={
+  python:    '#3b82f6',
+  javascript:'#f59e0b',
+  typescript:'#06b6d4',
+  tsx:       '#8b5cf6',
+  go:        '#10b981',
+  generic:   '#6b7280',
+};
+function lc(lang){return LC[lang]||'#6b7280'}
+
+
 function loadGraph(data){
   G=data;
   document.getElementById('drop-overlay').classList.add('hidden');
-  updateStats();renderWaste();renderCycles();renderGraph();
+  updateStats();renderWaste();renderCycles();renderResolution();renderGraph();
 }
 
 function updateStats(){
@@ -310,7 +329,46 @@ function updateStats(){
   const h=s.health_score;
   document.getElementById('s-health').textContent =h!=null?h+'/100':'—';
   document.getElementById('hnum').textContent=h??'—';
+  const el_t=document.getElementById('elapsed');
+  if(el_t&&G.meta?.elapsed_s!=null)el_t.textContent=G.meta.elapsed_s+'s';
   document.getElementById('health-pill').classList.remove('hidden');
+  const sl=document.getElementById('s-langs');
+  if(sl){const langs=G.meta?.languages||[];sl.textContent=langs.length>0?langs.join(', ').replace('typescript','ts').replace('javascript','js'):'—';}
+  const imp=G.meta?.import_stats||{};
+  const tot=Object.values(imp).reduce((a,b)=>a+b,0);
+  const loc=imp.local||0;
+  const pct=tot>0?Math.round(loc/tot*100):0;
+  const rel=document.getElementById('s-resolved');
+  if(rel&&tot>0){rel.textContent=pct+'%';rel.style.color=pct>80?'#00ff88':pct>50?'#ffaa00':'#ff3557';}
+}
+
+
+function renderResolution(){
+  if(!G)return;
+  const imp=G.meta?.import_stats||{};
+  const tot=Object.values(imp).reduce((a,b)=>a+b,0);
+  if(!tot)return;
+  const sec=document.getElementById('res-section');
+  const div=document.getElementById('res-stats');
+  if(!sec||!div)return;
+  sec.style.display='block';
+  const pct=tot>0?Math.round((imp.local||0)/tot*100):0;
+  const bar_w=pct;
+  div.innerHTML=`
+    <div style="margin-bottom:8px">
+      <div style="height:3px;background:#1f2540;border-radius:2px;margin-bottom:6px">
+        <div style="height:100%;width:${bar_w}%;background:${pct>80?'#00ff88':pct>50?'#ffaa00':'#ff3557'};border-radius:2px;transition:width .4s"></div>
+      </div>
+    </div>
+    <div class="mr"><span class="mk">local (edges)</span><span class="mv" style="color:#00ff88">${imp.local||0}</span></div>
+    <div class="mr"><span class="mk">stdlib</span><span class="mv">${imp.stdlib||0}</span></div>
+    <div class="mr"><span class="mk">third-party</span><span class="mv">${imp.third_party||0}</span></div>
+    <div class="mr"><span class="mk">unknown</span><span class="mv" style="color:${(imp.unknown||0)>0?'#ff3557':'#3d4a70'}">${imp.unknown||0}</span></div>
+    <div class="mr" style="margin-top:4px;border-top:1px solid #1f2540;padding-top:4px">
+      <span class="mk">resolution rate</span>
+      <span class="mv" style="color:${pct>80?'#00ff88':pct>50?'#ffaa00':'#ff3557'}">${pct}%</span>
+    </div>
+  `;
 }
 
 function renderWaste(){
@@ -373,6 +431,7 @@ function renderGraph(){
   const visN=G.nodes.filter(n=>{
     if(hideTests&&n.classification==='TEST')return false;
     if(hideOrphans&&(n.classification==='ORPHAN'||n.classification==='ISLAND'))return false;
+    if(activeLangs&&!activeLangs.has(n.language))return false;
     return true;
   });
   const visIds=new Set(visN.map(n=>n.id));
@@ -400,10 +459,18 @@ function renderGraph(){
     .attr('class','node').call(makeDrag(sim)).on('click',onNodeClick);
 
   nd.append('circle')
-    .attr('r',d=>d.classification==='ENTRY'?8:d.classification==='ORPHAN'?5:6)
+    .attr('r',d=>d.classification==='ENTRY'?9:d.classification==='ORPHAN'?6:7)
     .attr('fill',d=>cc(d.classification).f)
     .attr('stroke',d=>cycleSet.has(d.id)?'#ffaa00':cc(d.classification).s)
     .attr('stroke-width',d=>cycleSet.has(d.id)?2:1.5);
+
+  // Language ring (outer)
+  nd.append('circle')
+    .attr('r',d=>d.classification==='ENTRY'?11:d.classification==='ORPHAN'?8:9)
+    .attr('fill','none')
+    .attr('stroke',d=>lc(d.language))
+    .attr('stroke-width',1)
+    .attr('stroke-opacity',0.4);
 
   nd.append('text').attr('dy','-10').attr('text-anchor','middle')
     .text(d=>d.name).style('display',showLabels?null:'none');
@@ -463,6 +530,7 @@ function selectNode(id){
     <div class="mr"><span class="mk">inbound</span><span class="mv">${inE.length}</span></div>
     <div class="mr"><span class="mk">outbound</span><span class="mv">${outE.length}</span></div>
     ${node.island_id>=0?`<div class="mr"><span class="mk">island</span><span class="mv" style="color:#b06fff">cluster ${node.island_id+1}</span></div>`:''}
+    <div class="mr"><span class="mk">language</span><span class="mv" style="color:${lc(node.language)}">${node.language||'—'}</span></div>
   `;
 
   const chips=(el,items,dir)=>{
@@ -568,6 +636,32 @@ if(location.protocol!=='file:'){
     .then(d=>{loadGraph(d);toast(`Loaded ${d.nodes.length} files`);})
     .catch(()=>{});
 }
+
+document.getElementById('btn-lang').addEventListener('click',function(){
+  if(!G)return;
+  const langs=[...new Set(G.nodes.map(n=>n.language))].filter(Boolean);
+  if(!langs.length)return;
+  if(!activeLangs){
+    // cycle to first language
+    activeLangs=new Set([langs[0]]);
+    this.textContent=langs[0];
+    this.classList.add('on');
+  } else {
+    const cur=[...activeLangs][0];
+    const idx=langs.indexOf(cur);
+    const next=langs[(idx+1)%langs.length];
+    if(next===langs[0]&&idx===langs.length-1){
+      // wrap back to all
+      activeLangs=null;
+      this.textContent='all languages';
+      this.classList.remove('on');
+    } else {
+      activeLangs=new Set([next]);
+      this.textContent=next;
+    }
+  }
+  renderGraph();
+});
 
 window.addEventListener('resize',()=>{if(G)renderGraph()});
 

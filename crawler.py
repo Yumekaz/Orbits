@@ -28,7 +28,7 @@ SKIP_DIRS = {
     # Coverage / reports
     '.coverage', 'coverage',
     # Compiled C extensions
-    'site-packages', 'lib', 'lib64',
+    'site-packages', 'lib64',
 }
 
 # File extensions that are never source code we care about

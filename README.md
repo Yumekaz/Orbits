@@ -6,14 +6,17 @@
 
 ---
 
-## ⚡ Key Features (Phase 1)
+## ⚡ Key Features (Phase 3)
 
+- **Multi-Language Analysis**: Native support for **Python**, **JavaScript/TypeScript**, and **Go**.
 - **Interactive Dependency Mapping**: Explore your codebase through a force-directed graph powered by D3.js.
+- **Parallel Worker Engine**: High-performance analysis utilizing multiple CPU cores for massive codebases.
+- **Intelligent Caching Layer**: Accelerated re-scans using a persistent analysis cache.
+- **Advanced Import Resolution**: Classifies imports into **Local**, **Standard Library**, and **Third-Party**.
+- **Project Structure Intelligence**: Automatically detects `pyproject.toml`, `setup.cfg`, and `src/` layouts.
 - **Dead Code Detection**: Instantly identify **Orphans** (isolated files) and **Islands** (disconnected clusters).
-- **Cycle Tracking**: Detect circular dependencies that can cause runtime issues and maintenance headaches.
-- **Codebase Health Score**: A proprietary metric (0-100) based on the ratio of connected code to technical debt (cycles/orphans).
-- **Depth Analysis**: Understand how "deeply" modules are nested from your project's entry points.
-- **AST-Powered Parsing**: High-accuracy import extraction using Python's native Abstract Syntax Tree.
+- **Codebase Health Score**: A proprietary 0-100 metric based on technical debt.
+- **AST-Powered Parsing**: Deep, high-accuracy extraction using native language parsers.
 
 ---
 
@@ -53,8 +56,14 @@ python analyzer.py /path/to/your/project --serve
 
 ```text
 ├── analyzer.py       # Main CLI entry point
+├── worker.py         # Parallel analysis orchestrator
+├── lang_dispatch.py  # Multi-language routing engine
+├── cache.py          # Persistent analysis cache
 ├── graph_engine.py   # Core analysis & classification engine
-├── extractor.py      # AST-based import extractor
+├── extractor.py      # Main extractor hub
+├── extractors/       # Language-specific AST walkers (PY, JS, GO)
+├── resolver.py       # Main resolver hub
+├── resolvers/        # Language-specific dependency resolvers
 ├── crawler.py        # File system walker
 └── visualizer.html   # D3.js powered UI
 ```

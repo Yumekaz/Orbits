@@ -398,6 +398,6 @@ def analyze_graph(raw: dict) -> dict:
         'summary': summary,
         'meta':    {
             **meta,
-            'phase': 1,
+            'phase': raw.get('meta', {}).get('phase', 3),
         },
     }

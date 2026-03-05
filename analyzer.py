@@ -1,12 +1,12 @@
 """
-analyzer.py — Orbits entry point.
+analyzer.py — Orbits Phase 3
 
-Pipeline:
-    1. Crawl  — find all Python files, skip noise
-    2. Extract — pull every import via ast
-    3. Resolve — map import strings to actual file paths
-    4. Analyze — classify nodes, detect cycles/islands, compute depths
-    5. Output  — write enriched graph.json
+Multi-language dependency graph analyzer.
+Supports: Python, JavaScript, TypeScript, Go + generic fallback.
+
+Usage:
+    python analyzer.py /path/to/project --serve
+    python analyzer.py /path/to/project -o graph.json
 """
 
 import json
@@ -18,12 +18,22 @@ import http.server
 import os
 from pathlib import Path
 
-from crawler import crawl_by_language
-from extractor import extract_imports
-from graph_engine import analyze_graph
+from lang_dispatch import extract_all
+from graph_engine  import analyze_graph
 
 
-def extract(root):
+
+def _ensure_gitignore(root):
+    """Add .orbits_cache.json to .gitignore if a .gitignore exists."""
+    gi = root / '.gitignore'
+    entry = '.orbits_cache.json'
+    if gi.exists():
+        text = gi.read_text(encoding='utf-8')
+        if entry not in text:
+            gi.write_text(text.rstrip() + '\n' + entry + '\n', encoding='utf-8')
+    # else: don't create .gitignore, not our job
+
+def run(root: str | Path) -> dict:
     root_path = Path(root).resolve()
 
     if not root_path.exists():
@@ -33,78 +43,18 @@ def extract(root):
         print(f"ERROR: Not a directory: {root_path}", file=sys.stderr)
         sys.exit(1)
 
-    print(f"  Scanning: {root_path}", file=sys.stderr)
-
-    files_by_lang = crawl_by_language(root_path)
-    python_files  = files_by_lang.get('python', [])
-
-    if not python_files:
-        print("  WARNING: No Python files found.", file=sys.stderr)
-
-    print(f"  Found {len(python_files)} Python files", file=sys.stderr)
-
-    nodes = {}
-    for filepath in python_files:
-        try:
-            rel = str(filepath.relative_to(root_path))
-        except ValueError:
-            continue
-        stat = filepath.stat()
-        nodes[rel] = {
-            'id':       rel,
-            'filepath': rel,
-            'name':     filepath.name,
-            'language': 'python',
-            'size':     stat.st_size,
-            'dir':      str(filepath.parent.relative_to(root_path))
-                        if filepath.parent != root_path else '.',
-        }
-
-    print(f"  Extracting imports...", file=sys.stderr)
-
-    all_edges = []
-    for node_id in nodes:
-        filepath  = root_path / node_id
-        raw_edges = extract_imports(filepath, root_path)
-        for edge in raw_edges:
-            if edge['resolved'] and edge['to'] in nodes:
-                all_edges.append({
-                    'source': edge['from'],
-                    'target': edge['to'],
-                    'type':   edge['type'],
-                    'line':   edge['line'],
-                })
-
-    seen = set()
-    unique_edges = []
-    for edge in all_edges:
-        key = (edge['source'], edge['target'])
-        if key not in seen:
-            seen.add(key)
-            unique_edges.append(edge)
-
-    print(f"  {len(unique_edges)} internal edges", file=sys.stderr)
-
-    return {
-        'nodes': list(nodes.values()),
-        'edges': unique_edges,
-        'meta': {
-            'root':        str(root_path),
-            'total_files': len(nodes),
-            'total_edges': len(unique_edges),
-            'languages':   list(files_by_lang.keys()),
-        },
-    }
-
-
-def run(root):
-    raw      = extract(root)
+    _ensure_gitignore(root_path)
+    raw      = extract_all(root_path, verbose=True)
     enriched = analyze_graph(raw)
+
     s = enriched['summary']
-    print(f"  Orphans: {s['counts'].get('ORPHAN',0)}  "
-          f"Islands: {s['island_count']}  "
-          f"Cycles: {s['cycle_count']}  "
-          f"Health: {s['health_score']}/100", file=sys.stderr)
+    langs = enriched['meta'].get('languages', [])
+    print(f"  Languages: {', '.join(langs)}", file=sys.stderr)
+    print(f"  Health:    {s['health_score']}/100  "
+          f"Orphans:{s['counts'].get('ORPHAN',0)}  "
+          f"Islands:{s['island_count']}  "
+          f"Cycles:{s['cycle_count']}",
+          file=sys.stderr)
     return enriched
 
 
@@ -112,7 +62,7 @@ class _QuietHandler(http.server.SimpleHTTPRequestHandler):
     def log_message(self, *args): pass
 
 
-def serve(output_path, port=8765):
+def serve(output_path: Path, port: int = 8765):
     viz = Path(__file__).parent / 'visualizer.html'
     if not viz.exists():
         print("ERROR: visualizer.html not found", file=sys.stderr)
@@ -130,15 +80,27 @@ def serve(output_path, port=8765):
 
 
 def main():
-    parser = argparse.ArgumentParser(prog='orbits',
-        description='Orbits — codebase dependency graph & dead code detector')
+    parser = argparse.ArgumentParser(
+        prog='orbits',
+        description='Orbits — multi-language codebase dependency graph & dead code detector',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Supports: Python, JavaScript, TypeScript, Go + generic fallback
+
+Examples:
+  python analyzer.py .
+  python analyzer.py ~/projects/myapp --serve
+  python analyzer.py ~/projects/myapp -o graph.json --serve
+        """
+    )
     parser.add_argument('path', help='Project root directory')
     parser.add_argument('-o', '--output', default='graph.json')
-    parser.add_argument('--serve', action='store_true')
+    parser.add_argument('--serve', action='store_true',
+                        help='Open visualizer in browser after analysis')
     parser.add_argument('--port', type=int, default=8765)
     args = parser.parse_args()
 
-    print(f"\nOrbits", file=sys.stderr)
+    print(f"\nOrbits — Phase 3", file=sys.stderr)
     print(f"{'─'*40}", file=sys.stderr)
 
     graph       = run(args.path)
@@ -146,9 +108,14 @@ def main():
     output_path.write_text(json.dumps(graph, indent=2, ensure_ascii=False))
 
     meta = graph['meta']
-    print(f"\n  Files:  {meta['total_files']}", file=sys.stderr)
-    print(f"  Edges:  {meta['total_edges']}", file=sys.stderr)
-    print(f"  Output: {output_path.resolve()}", file=sys.stderr)
+    imp  = meta.get('import_stats', {})
+    total = sum(imp.values())
+    pct   = round(imp.get('local', 0) / total * 100, 1) if total else 0
+
+    print(f"\n  Files:     {meta['total_files']}", file=sys.stderr)
+    print(f"  Edges:     {meta['total_edges']}", file=sys.stderr)
+    print(f"  Resolved:  {imp.get('local',0)}/{total} imports ({pct}%)", file=sys.stderr)
+    print(f"  Output:    {output_path.resolve()}", file=sys.stderr)
     print(f"{'─'*40}\n", file=sys.stderr)
 
     if args.serve:
