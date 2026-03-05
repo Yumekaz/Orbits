@@ -1,682 +1,964 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Orbits</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
-<style>
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Syne:wght@400;600;700;800&display=swap');
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Orbits. ⬡</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Syne:wght@400;600;700;800&display=swap');
 
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0
+    }
 
-:root{
-  --bg:#07080f;--bg2:#0d0f1c;--bg3:#131627;--bg4:#191d30;
-  --border:#1f2540;--text:#bcc8e8;--muted:#3d4a70;--dim:#252d4a;
-  --cyan:#00e5ff;--green:#00ff88;--amber:#ffaa00;
-  --red:#ff3557;--purple:#b06fff;
-}
+    :root {
+      --bg: #05060d;
+      --bg-gradient: radial-gradient(circle at 50% 50%, #0d1121 0%, #05060d 100%);
+      --panel-bg: rgba(7, 9, 18, 0.85);
+      --glass: rgba(18, 22, 40, 0.65);
+      --border: rgba(35, 42, 75, 0.6);
+      --border-hi: rgba(0, 229, 255, 0.45);
+      --text: #bcc8e8;
+      --text-hi: #ffffff;
+      --muted: #4e5a80;
+      --dim: #2c3454;
+      --cyan: #00e5ff;
+      --green: #00ff88;
+      --amber: #ffaa00;
+      --red: #ff3557;
+      --purple: #b06fff;
+      --node-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+    }
 
-html,body{width:100%;height:100%;background:var(--bg);color:var(--text);
-  font-family:'JetBrains Mono',monospace;overflow:hidden}
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'JetBrains Mono', monospace;
+      overflow: hidden;
+      background-image: var(--bg-gradient);
+    }
 
-#app{display:flex;flex-direction:column;height:100vh}
+    #app {
+      display: flex;
+      flex-direction: column;
+      height: 100vh
+    }
 
-/* ── Topbar ─────────────────────────────────────────────── */
-#topbar{display:flex;align-items:center;height:44px;background:var(--bg2);
-  border-bottom:1px solid var(--border);flex-shrink:0;z-index:10}
+    /* ── Topbar: Premium & Spaced ──────────────────────────── */
+    #topbar {
+      display: flex;
+      align-items: center;
+      height: 58px;
+      background: var(--glass);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+      z-index: 100;
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      padding: 0 8px
+    }
 
-.tb-logo{padding:0 20px;font-family:'Syne',sans-serif;font-size:15px;
-  font-weight:800;color:#fff;border-right:1px solid var(--border);
-  height:100%;display:flex;align-items:center;white-space:nowrap}
-.tb-logo span{color:var(--cyan)}
+    .tb-logo {
+      padding: 0 24px;
+      font-family: 'Syne', sans-serif;
+      font-size: 18px;
+      font-weight: 800;
+      color: #fff;
+      border-right: 1px solid var(--border);
+      height: 100%;
+      display: flex;
+      align-items: center;
+      white-space: nowrap;
+      letter-spacing: -0.01em
+    }
 
-#tb-stats{display:flex;height:100%}
-.tb-stat{display:flex;align-items:center;gap:7px;padding:0 16px;
-  border-right:1px solid var(--border);font-size:11px;cursor:default}
-.tv{font-weight:700;font-size:13px}
-.tl{color:var(--muted)}
-.cv{color:var(--cyan)}.ev{color:var(--text)}
-.ov{color:var(--red)}.yv{color:var(--amber)}.gv{color:var(--green)}
+    .tb-logo span {
+      color: var(--cyan);
+      text-shadow: 0 0 12px rgba(0, 229, 255, 0.4)
+    }
 
-#tb-controls{display:flex;gap:5px;padding:0 14px;margin-left:auto;align-items:center}
-.btn{background:transparent;border:1px solid var(--border);color:var(--muted);
-  font-family:'JetBrains Mono',monospace;font-size:10px;padding:4px 10px;
-  cursor:pointer;border-radius:2px;letter-spacing:.06em;
-  transition:border-color .12s,color .12s,background .12s;text-transform:uppercase}
-.btn:hover{border-color:var(--cyan);color:var(--cyan)}
-.btn.on{border-color:var(--cyan);color:var(--cyan);background:rgba(0,229,255,.07)}
+    #tb-stats {
+      display: flex;
+      align-items: center;
+      height: 100%;
+      gap: 6px;
+      padding-left: 12px
+    }
 
-/* ── Main ───────────────────────────────────────────────── */
-#main{display:flex;flex:1;overflow:hidden}
+    .tb-group {
+      display: flex;
+      align-items: center;
+      background: rgba(255, 255, 255, 0.03);
+      padding: 0 4px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      height: 40px
+    }
 
-/* ── Waste panel ─────────────────────────────────────────── */
-#waste-panel{width:256px;background:var(--bg2);border-right:1px solid var(--border);
-  display:flex;flex-direction:column;flex-shrink:0;overflow:hidden;transition:width .2s}
-#waste-panel.collapsed{width:0;border:none;overflow:hidden}
+    .tb-stat {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 0 16px;
+      min-width: 70px
+    }
 
-.ph{padding:11px 14px 10px;border-bottom:1px solid var(--border);
-  display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
-.pt{font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
-.pb{font-size:10px;font-weight:700;padding:1px 7px;border-radius:10px;
-  background:rgba(255,53,87,.15);color:var(--red);border:1px solid rgba(255,53,87,.3)}
-.pb.z{background:rgba(0,255,136,.1);color:var(--green);border-color:rgba(0,255,136,.2)}
+    .tv {
+      font-weight: 700;
+      font-size: 14px;
+      line-height: 1
+    }
 
-#waste-list{flex:1;overflow-y:auto;padding:6px 0}
-.ws-label{font-size:9px;letter-spacing:.1em;text-transform:uppercase;
-  color:var(--dim);padding:8px 14px 4px}
-.wi{display:flex;align-items:flex-start;gap:8px;padding:5px 14px;
-  cursor:pointer;transition:background .1s;border-left:2px solid transparent}
-.wi:hover{background:var(--bg3)}
-.wi.sel{background:var(--bg3);border-left-color:var(--cyan)}
-.wi-d{width:7px;height:7px;border-radius:50%;flex-shrink:0;margin-top:4px}
-.wi-i{min-width:0}
-.wi-n{font-size:11px;color:var(--text);white-space:nowrap;overflow:hidden;
-  text-overflow:ellipsis;max-width:190px}
-.wi-p{font-size:9px;color:var(--muted);margin-top:1px;white-space:nowrap;
-  overflow:hidden;text-overflow:ellipsis;max-width:190px}
-.we{padding:22px 14px;text-align:center;font-size:11px;
-  color:var(--muted);line-height:1.7}
-.we big{font-size:22px;display:block;margin-bottom:8px;opacity:.3}
+    .tl {
+      color: var(--muted);
+      font-size: 8.5px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-top: 3px
+    }
 
-/* ── Canvas ──────────────────────────────────────────────── */
-#canvas-wrap{flex:1;position:relative;overflow:hidden}
-svg#graph{width:100%;height:100%;cursor:grab}
-svg#graph:active{cursor:grabbing}
+    .cv {
+      color: var(--cyan)
+    }
 
-/* ── Drop overlay ────────────────────────────────────────── */
-#drop-overlay{position:absolute;inset:0;display:flex;flex-direction:column;
-  align-items:center;justify-content:center;gap:14px;background:var(--bg);z-index:20}
-#drop-overlay.hidden{display:none}
-.df{border:1px solid var(--border);border-radius:4px;padding:52px 68px;
-  text-align:center;transition:border-color .2s}
-.df.over{border-color:var(--cyan)}
-.dg{font-size:34px;opacity:.2;margin-bottom:18px;display:block}
-.dt{font-family:'Syne',sans-serif;font-size:19px;font-weight:700;
-  color:#fff;margin-bottom:10px}
-.ds{font-size:11px;color:var(--muted);line-height:1.9}
-.ds code{color:var(--cyan);background:var(--bg3);padding:1px 6px;
-  border-radius:2px;border:1px solid var(--border)}
-.dor{font-size:10px;color:var(--dim)}
-.bl{background:rgba(0,229,255,.08);border:1px solid var(--cyan);color:var(--cyan);
-  font-family:'JetBrains Mono',monospace;font-size:11px;padding:8px 20px;
-  cursor:pointer;border-radius:2px;letter-spacing:.06em;
-  transition:background .15s;text-transform:uppercase}
-.bl:hover{background:rgba(0,229,255,.15)}
-#file-input{display:none}
+    .ev {
+      color: var(--text-hi)
+    }
 
-/* ── Inspector ───────────────────────────────────────────── */
-#inspector{width:256px;background:var(--bg2);border-left:1px solid var(--border);
-  display:flex;flex-direction:column;flex-shrink:0;overflow:hidden;
-  overflow-y:auto;transition:width .2s}
-#inspector.collapsed{width:0;border:none;overflow:hidden}
+    .ov {
+      color: var(--red)
+    }
 
-.is{border-bottom:1px solid var(--border);padding:12px 14px}
-.it{font-size:9px;letter-spacing:.12em;text-transform:uppercase;
-  color:var(--muted);margin-bottom:9px}
-.ip{font-size:11px;color:var(--dim);font-style:italic}
-.if{font-size:12px;color:#fff;word-break:break-all;line-height:1.4;margin-bottom:9px}
-.mr{display:flex;justify-content:space-between;padding:3px 0;font-size:10px}
-.mk{color:var(--muted)}.mv{color:var(--text);text-align:right}
-.mv.entry{color:var(--green)}.mv.leaf{color:var(--amber)}
-.mv.connected{color:var(--cyan)}.mv.orphan{color:var(--red)}
-.mv.island{color:var(--purple)}.mv.test{color:var(--muted)}
+    .yv {
+      color: var(--amber)
+    }
 
-.ll{display:flex;flex-direction:column;gap:3px;margin-top:5px}
-.lc{font-size:10px;color:var(--text);padding:3px 8px;background:var(--bg3);
-  border-radius:2px;cursor:pointer;border-left:2px solid var(--border);
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-  transition:border-color .1s}
-.lc:hover{border-left-color:var(--cyan);color:var(--cyan)}
-.lc.in{border-left-color:var(--green)}.lc.out{border-left-color:var(--amber)}
-.le{font-size:10px;color:var(--dim);font-style:italic}
+    .gv {
+      color: var(--green)
+    }
 
-.leg{display:flex;flex-direction:column;gap:6px}
-.lr{display:flex;align-items:center;gap:8px;font-size:10px;color:var(--muted)}
-.ld{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+    #tb-controls {
+      display: flex;
+      gap: 8px;
+      padding: 0 14px;
+      margin-left: auto;
+      align-items: center
+    }
 
-/* ── Overlays ────────────────────────────────────────────── */
-#cycle-banner{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);
-  background:rgba(255,170,0,.1);border:1px solid rgba(255,170,0,.35);
-  border-radius:3px;padding:7px 16px;font-size:11px;color:var(--amber);
-  display:flex;align-items:center;gap:10px;z-index:30;cursor:pointer;
-  backdrop-filter:blur(4px)}
-#cycle-banner.hidden{display:none}
-#cycle-banner:hover{background:rgba(255,170,0,.18)}
+    .btn {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      padding: 7px 14px;
+      cursor: pointer;
+      border-radius: 4px;
+      letter-spacing: .06em;
+      transition: all .2s cubic-bezier(0.4, 0, 0.2, 1);
+      text-transform: uppercase
+    }
 
-#health-pill{position:absolute;bottom:16px;right:16px;background:var(--bg3);
-  border:1px solid var(--border);border-radius:3px;padding:5px 12px;
-  font-size:10px;color:var(--muted);z-index:30;pointer-events:none}
-#health-pill span{font-size:14px;font-weight:700}
-#health-pill.hidden{display:none}
+    .btn:hover {
+      border-color: var(--cyan);
+      color: var(--cyan);
+      background: rgba(0, 229, 255, 0.08)
+    }
 
-/* ── Graph ───────────────────────────────────────────────── */
-.link{stroke-width:1;fill:none}
-.node circle{cursor:pointer}
-.node text{font-family:'JetBrains Mono',monospace;font-size:8.5px;
-  fill:var(--muted);pointer-events:none;user-select:none}
-.node.active text{fill:var(--text)}
+    .btn.on {
+      border-color: var(--cyan);
+      color: var(--cyan);
+      background: rgba(0, 229, 255, 0.14);
+      box-shadow: inset 0 0 10px rgba(0, 229, 255, 0.05)
+    }
 
-#toast{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);
-  background:var(--bg3);border:1px solid var(--border);font-size:10px;
-  color:var(--text);padding:6px 14px;border-radius:2px;opacity:0;
-  transition:opacity .2s;pointer-events:none;z-index:100;white-space:nowrap}
-#toast.show{opacity:1}
+    /* ── Main Layout ───────────────────────────────────────── */
+    #main {
+      display: flex;
+      flex: 1;
+      overflow: hidden
+    }
 
-::-webkit-scrollbar{width:3px}
-::-webkit-scrollbar-track{background:var(--bg2)}
-::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
-</style>
+    #waste-panel,
+    #inspector {
+      width: 290px;
+      background: var(--panel-bg);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      overflow: hidden;
+      transition: width .35s cubic-bezier(0.4, 0, 0.2, 1);
+      z-index: 50
+    }
+
+    #waste-panel {
+      border-right: 1px solid var(--border)
+    }
+
+    #inspector {
+      border-left: 1px solid var(--border);
+      overflow-y: auto
+    }
+
+    #waste-panel.collapsed,
+    #inspector.collapsed {
+      width: 0;
+      border: none
+    }
+
+    .section-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+      background: rgba(255, 255, 255, 0.01)
+    }
+
+    .sh-title {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: .15em;
+      text-transform: uppercase;
+      color: var(--text-hi);
+      opacity: 0.6
+    }
+
+    .badge {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 12px;
+      background: rgba(255, 53, 87, 0.1);
+      color: var(--red);
+      border: 1px solid rgba(255, 53, 87, 0.2)
+    }
+
+    .badge.ok {
+      background: rgba(0, 255, 136, 0.1);
+      color: var(--green);
+      border-color: rgba(0, 255, 136, 0.2)
+    }
+
+    /* ── Waste List & Inspector ────────────────────────────── */
+    .list-cont {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px 0
+    }
+
+    .list-label {
+      font-size: 9px;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      color: var(--dim);
+      padding: 10px 20px 6px
+    }
+
+    .list-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 8px 20px;
+      cursor: pointer;
+      transition: all .15s;
+      border-left: 3px solid transparent
+    }
+
+    .list-item:hover {
+      background: rgba(255, 255, 255, 0.03)
+    }
+
+    .list-item.active {
+      background: rgba(0, 229, 255, 0.04);
+      border-left-color: var(--cyan)
+    }
+
+    .item-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 2px;
+      flex-shrink: 0;
+      margin-top: 5px
+    }
+
+    .item-info {
+      min-width: 0
+    }
+
+    .item-name {
+      font-size: 12px;
+      color: var(--text-hi);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis
+    }
+
+    .item-path {
+      font-size: 9px;
+      color: var(--muted);
+      margin-top: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis
+    }
+
+    .is-pane {
+      border-bottom: 1px solid var(--border);
+      padding: 20px
+    }
+
+    .is-label {
+      font-size: 9px;
+      letter-spacing: .15em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 12px
+    }
+
+    .is-val-hero {
+      font-size: 14px;
+      color: var(--text-hi);
+      font-weight: 700;
+      word-break: break-all;
+      line-height: 1.4;
+      margin-bottom: 14px
+    }
+
+    .kv-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 5px 0;
+      font-size: 11px
+    }
+
+    .k {
+      color: var(--muted)
+    }
+
+    .v {
+      color: var(--text);
+      font-weight: 500;
+      text-align: right
+    }
+
+    .chip-cont {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: 10px
+    }
+
+    .chip {
+      font-size: 10px;
+      padding: 6px 12px;
+      background: rgba(255, 255, 255, 0.02);
+      border-radius: 4px;
+      cursor: pointer;
+      border: 1px solid var(--border);
+      transition: all .2s;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis
+    }
+
+    .chip:hover {
+      border-color: var(--border-hi);
+      background: rgba(0, 229, 255, 0.06);
+      color: #fff
+    }
+
+    .chip.in {
+      border-left: 3px solid var(--green)
+    }
+
+    .chip.out {
+      border-left: 3px solid var(--amber)
+    }
+
+    /* ── Graph & Canvas ────────────────────────────────────── */
+    #canvas-wrap {
+      flex: 1;
+      position: relative;
+      overflow: hidden
+    }
+
+    svg#graph {
+      width: 100%;
+      height: 100%;
+      cursor: grab
+    }
+
+    svg#graph:active {
+      cursor: grabbing
+    }
+
+    .link {
+      stroke-width: 1.2;
+      fill: none;
+      transition: stroke-opacity .3s
+    }
+
+    .node circle {
+      cursor: pointer;
+      transition: stroke-width .2s
+    }
+
+    .node text {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 9px;
+      fill: var(--muted);
+      pointer-events: none;
+      user-select: none;
+      font-weight: 500
+    }
+
+    .node.active text {
+      fill: var(--text-hi)
+    }
+
+    /* ── Overlays ──────────────────────────────────────────── */
+    #drop-overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      background: var(--bg);
+      z-index: 200
+    }
+
+    #drop-overlay.hidden {
+      display: none
+    }
+
+    .drop-box {
+      border: 1px dashed var(--border);
+      padding: 60px 80px;
+      text-align: center;
+      border-radius: 8px
+    }
+
+    .drop-icon {
+      font-size: 48px;
+      opacity: .15;
+      margin-bottom: 24px;
+      display: block
+    }
+
+    .drop-title {
+      font-family: 'Syne', sans-serif;
+      font-size: 24px;
+      font-weight: 800;
+      color: #fff;
+      margin-bottom: 14px
+    }
+
+    .drop-text {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 2
+    }
+
+    .drop-text code {
+      color: var(--cyan);
+      background: rgba(255, 255, 255, 0.05);
+      padding: 2px 8px;
+      border-radius: 4px
+    }
+
+    #health-pill {
+      position: absolute;
+      bottom: 24px;
+      right: 24px;
+      background: var(--panel-bg);
+      backdrop-filter: blur(8px);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 16px;
+      font-size: 11px;
+      color: var(--muted);
+      z-index: 90
+    }
+
+    #health-pill span {
+      font-size: 16px;
+      font-weight: 800;
+      color: var(--green)
+    }
+
+    #health-pill.hidden {
+      display: none
+    }
+
+    #toast {
+      position: absolute;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--panel-bg);
+      backdrop-filter: blur(8px);
+      border: 1px solid var(--cyan);
+      font-size: 11px;
+      color: #fff;
+      padding: 8px 20px;
+      border-radius: 4px;
+      opacity: 0;
+      transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+      pointer-events: none;
+      z-index: 1000
+    }
+
+    #toast.show {
+      opacity: 1;
+      bottom: 32px
+    }
+
+    ::-webkit-scrollbar {
+      width: 4px
+    }
+
+    ::-webkit-scrollbar-track {
+      background: transparent
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: var(--border);
+      border-radius: 2px
+    }
+  </style>
 </head>
+
 <body>
-<div id="app">
-  <div id="topbar">
-    <div class="tb-logo">Orbits<span>.</span></div>
-    <div id="tb-stats">
-      <div class="tb-stat"><span class="tv cv" id="s-files">—</span><span class="tl">files</span></div>
-      <div class="tb-stat"><span class="tv ev" id="s-edges">—</span><span class="tl">edges</span></div>
-      <div class="tb-stat"><span class="tv ov" id="s-orphans">—</span><span class="tl">dead</span></div>
-      <div class="tb-stat"><span class="tv yv" id="s-cycles">—</span><span class="tl">cycles</span></div>
-      <div class="tb-stat"><span class="tv gv" id="s-health">—</span><span class="tl">health</span></div>
-      <div class="tb-stat"><span class="tv" id="s-resolved" style="color:#4a5a80">—</span><span class="tl">resolved</span></div>
-      <div class="tb-stat"><span class="tv" id="s-langs" style="color:#4a5a80">—</span><span class="tl">languages</span></div>
-    </div>
-    <div id="tb-controls">
-      <button class="btn on"  id="btn-waste">waste</button>
-      <button class="btn on"  id="btn-insp">inspector</button>
-      <button class="btn on"  id="btn-labels">labels</button>
-      <button class="btn"     id="btn-ht">hide tests</button>
-      <button class="btn"     id="btn-lang">all languages</button>
-      <button class="btn"     id="btn-ho">hide orphans</button>
-      <button class="btn"     id="btn-reset">reset</button>
-    </div>
-  </div>
-
-  <div id="main">
-    <!-- Waste panel -->
-    <div id="waste-panel">
-      <div class="ph">
-        <span class="pt">Dead Files</span>
-        <span class="pb z" id="waste-badge">0</span>
+  <div id="app">
+    <div id="topbar">
+      <div class="tb-logo">ORBITS<span>.</span></div>
+      <div id="tb-stats">
+        <div class="tb-group">
+          <div class="tb-stat" title="Total Files"><span class="tv cv" id="s-files">—</span><span
+              class="tl">Files</span></div>
+          <div class="tb-stat" title="Dependencies"><span class="tv ev" id="s-edges">—</span><span
+              class="tl">Edges</span></div>
+          <div class="tb-stat" title="Dead Files"><span class="tv ov" id="s-orphans">—</span><span
+              class="tl">Dead</span></div>
+        </div>
+        <div class="tb-group">
+          <div class="tb-stat" title="Circular Deps"><span class="tv yv" id="s-cycles">—</span><span
+              class="tl">Cycles</span></div>
+          <div class="tb-stat" title="Code Health"><span class="tv gv" id="s-health">—</span><span
+              class="tl">Health</span></div>
+        </div>
+        <div class="tb-group">
+          <div class="tb-stat" id="stat-res" title="Resolution Rate"><span class="tv" id="s-resolved">—</span><span
+              class="tl">Resolved</span></div>
+          <div class="tb-stat" id="stat-langs" title="Languages"><span class="tv" id="s-langs">—</span><span
+              class="tl">Langs</span></div>
+        </div>
       </div>
-      <div id="waste-list">
-        <div class="we"><big>⬡</big>Load a graph to see dead files</div>
+      <div id="tb-controls">
+        <button class="btn on" id="btn-waste">waste</button>
+        <button class="btn on" id="btn-insp">inspector</button>
+        <button class="btn on" id="btn-labels">labels</button>
+        <button class="btn" id="btn-ht">hide tests</button>
+        <button class="btn" id="btn-lang">all languages</button>
+        <button class="btn" id="btn-reset">reset</button>
       </div>
     </div>
 
-    <!-- Canvas -->
-    <div id="canvas-wrap">
-      <div id="drop-overlay">
-        <div class="df" id="drop-frame">
-          <span class="dg">⬡</span>
-          <div class="dt">Orbits.</div>
-          <div class="ds">
-            Generate a graph first:<br><br>
-            <code>python analyzer.py /your/project --serve</code><br><br>
-            or drop <code>graph.json</code> here
+    <div id="main">
+      <div id="waste-panel">
+        <div class="section-header">
+          <span class="sh-title">Dead Files</span>
+          <span class="badge" id="waste-badge">0</span>
+        </div>
+        <div id="waste-list" class="list-cont">
+          <div style="padding:40px;text-align:center;color:var(--dim)">⬡<br>Scan a project to analyze waste</div>
+        </div>
+      </div>
+
+      <div id="canvas-wrap">
+        <div id="drop-overlay">
+          <div class="drop-box">
+            <span class="drop-icon">⬡</span>
+            <div class="drop-title">ORBITS.</div>
+            <div class="drop-text">
+              Start the analyzer to begin:<br>
+              <code>python analyzer.py /project --serve</code><br><br>
+              or drop a <code>graph.json</code> here
+            </div>
+          </div>
+          <div style="color:var(--dim);font-size:10px">OR</div>
+          <button class="btn on" id="btn-open" style="padding:10px 30px">OPEN GRAPH FILE</button>
+          <input type="file" id="file-input" accept=".json" style="display:none">
+        </div>
+
+        <svg id="graph">
+          <defs>
+            <marker id="arr" viewBox="0 -4 8 8" refX="15" refY="0" markerWidth="5" markerHeight="5" orient="auto">
+              <path d="M0,-4L8,0L0,4" fill="rgba(31,37,64,0.8)" />
+            </marker>
+            <marker id="arr-hi" viewBox="0 -4 8 8" refX="15" refY="0" markerWidth="5" markerHeight="5" orient="auto">
+              <path d="M0,-4L8,0L0,4" fill="rgba(0,229,255,0.8)" />
+            </marker>
+          </defs>
+          <g id="zoom-layer">
+            <g id="links-layer"></g>
+            <g id="nodes-layer"></g>
+          </g>
+        </svg>
+
+        <div id="health-pill" class="hidden">
+          Project Health <span>—</span>/100 &nbsp; <small id="elapsed" style="font-size:9px;opacity:0.5"></small>
+        </div>
+        <div id="toast"></div>
+      </div>
+
+      <div id="inspector">
+        <div class="is-pane">
+          <div class="is-label">Selected File</div>
+          <div id="ip" style="color:var(--dim);font-style:italic;font-size:11px">Click any node to inspect</div>
+          <div id="ic" style="display:none">
+            <div class="is-val-hero" id="iname"></div>
+            <div id="imeta"></div>
           </div>
         </div>
-        <div class="dor">— or —</div>
-        <button class="bl" id="btn-open">Open graph.json</button>
-        <input type="file" id="file-input" accept=".json">
-      </div>
-
-      <svg id="graph">
-        <defs>
-          <marker id="arr" viewBox="0 -4 8 8" refX="15" refY="0"
-                  markerWidth="5" markerHeight="5" orient="auto">
-            <path d="M0,-4L8,0L0,4" fill="#1f2540"/>
-          </marker>
-          <marker id="arr-hi" viewBox="0 -4 8 8" refX="15" refY="0"
-                  markerWidth="5" markerHeight="5" orient="auto">
-            <path d="M0,-4L8,0L0,4" fill="rgba(0,229,255,.8)"/>
-          </marker>
-        </defs>
-        <g id="zoom-layer">
-          <g id="links-layer"></g>
-          <g id="nodes-layer"></g>
-        </g>
-      </svg>
-
-      <div id="cycle-banner" class="hidden">
-        ⚠ <span id="cycle-text"></span>
-      </div>
-      <div id="health-pill" class="hidden">
-        Health <span id="hnum">—</span>/100 &nbsp;·&nbsp; <span id="elapsed" style="color:var(--muted);font-size:9px"></span>
-      </div>
-      <div id="toast"></div>
-    </div>
-
-    <!-- Inspector -->
-    <div id="inspector">
-      <div class="is">
-        <div class="it">Selected File</div>
-        <div id="ip" class="ip">Click any node</div>
-        <div id="ic" style="display:none">
-          <div class="if" id="iname"></div>
-          <div id="imeta"></div>
+        <div class="is-pane">
+          <div class="is-label">Imports (Outbound)</div>
+          <div id="iout"></div>
         </div>
-      </div>
-      <div class="is">
-        <div class="it">Imports (outbound)</div>
-        <div id="iout"></div>
-      </div>
-      <div class="is">
-        <div class="it">Imported by (inbound)</div>
-        <div id="iin"></div>
-      </div>
-      <div class="is" id="res-section" style="display:none">
-        <div class="it">Import Resolution</div>
-        <div id="res-stats"></div>
-      </div>
-      <div class="is">
-        <div class="it">Legend</div>
-        <div class="leg">
-          <div class="lr"><div class="ld" style="background:#00e5ff"></div>Connected</div>
-          <div class="lr"><div class="ld" style="background:#00ff88"></div>Entry point</div>
-          <div class="lr"><div class="ld" style="background:#ffaa00"></div>Leaf</div>
-          <div class="lr"><div class="ld" style="background:#ff3557"></div>Orphan — dead</div>
-          <div class="lr"><div class="ld" style="background:#b06fff"></div>Island — isolated cluster</div>
-          <div class="lr"><div class="ld" style="background:#3d4a70"></div>Test file</div>
+        <div class="is-pane">
+          <div class="is-label">Imported By (Inbound)</div>
+          <div id="iin"></div>
+        </div>
+        <div class="is-pane">
+          <div class="is-label">Legend</div>
+          <div class="leg" style="display:flex;flex-direction:column;gap:10px">
+            <div class="lr"
+              style="display:flex;align-items:center;gap:10px;font-size:11px;color:var(--text);opacity:0.8">
+              <div class="item-dot" style="background:var(--cyan);margin-top:0"></div>Connected file
+            </div>
+            <div class="lr"
+              style="display:flex;align-items:center;gap:10px;font-size:11px;color:var(--text);opacity:0.8">
+              <div class="item-dot" style="background:var(--green);margin-top:0"></div>Entry point
+            </div>
+            <div class="lr"
+              style="display:flex;align-items:center;gap:10px;font-size:11px;color:var(--text);opacity:0.8">
+              <div class="item-dot" style="background:var(--amber);margin-top:0"></div>Leaf module
+            </div>
+            <div class="lr"
+              style="display:flex;align-items:center;gap:10px;font-size:11px;color:var(--text);opacity:0.8">
+              <div class="item-dot" style="background:var(--red);margin-top:0"></div>Dead / Orphan
+            </div>
+            <div class="lr"
+              style="display:flex;align-items:center;gap:10px;font-size:11px;color:var(--text);opacity:0.8">
+              <div class="item-dot" style="background:var(--purple);margin-top:0"></div>Isolated cluster
+            </div>
+          </div>
         </div>
       </div>
     </div>
   </div>
-</div>
+  </div>
 
-<script>
-let G=null,simN=[],simE=[],sim=null,selId=null;
-let showLabels=true,hideTests=false,hideOrphans=false,zb=null;
-let activeLangs=null; // null = all, Set = filter to these
+  <script>
+    let G = null, simN = [], simE = [], sim = null, selId = null;
+    let showLabels = true, hideTests = false, hideOrphans = false, zb = null, activeLangs = null;
 
-const CC={
-  CONNECTED:{f:'rgba(0,229,255,.15)',s:'#00e5ff'},
-  ENTRY:    {f:'rgba(0,255,136,.12)',s:'#00ff88'},
-  LEAF:     {f:'rgba(255,170,0,.12)', s:'#ffaa00'},
-  ORPHAN:   {f:'rgba(255,53,87,.07)',s:'#ff3557'},
-  ISLAND:   {f:'rgba(176,111,255,.1)',s:'#b06fff'},
-  TEST:     {f:'rgba(61,74,112,.1)', s:'#3d4a70'},
-  GENERATED:{f:'rgba(34,40,64,.1)',  s:'#222840'},
-};
+    const THEME = {
+      CONNECTED: { f: 'rgba(0,229,255,0.1)', s: '#00e5ff' },
+      ENTRY: { f: 'rgba(0,255,136,0.12)', s: '#00ff88' },
+      LEAF: { f: 'rgba(255,170,0,0.1)', s: '#ffaa00' },
+      ORPHAN: { f: 'rgba(255,53,87,0.08)', s: '#ff3557' },
+      ISLAND: { f: 'rgba(176,111,255,0.1)', s: '#b06fff' },
+      TEST: { f: 'rgba(61,74,112,0.1)', s: '#3d4a70' }
+    };
 
-function cc(cls){return CC[cls]||CC.ORPHAN}
+    const LANG_COLORS = {
+      python: '#3b82f6', javascript: '#f59e0b', typescript: '#06b6d4', go: '#10b981', generic: '#6b7280'
+    };
 
-const LC={
-  python:    '#3b82f6',
-  javascript:'#f59e0b',
-  typescript:'#06b6d4',
-  tsx:       '#8b5cf6',
-  go:        '#10b981',
-  generic:   '#6b7280',
-};
-function lc(lang){return LC[lang]||'#6b7280'}
+    function getTheme(cls) { return THEME[cls] || THEME.ORPHAN; }
+    function getLangColor(l) { return LANG_COLORS[(l || '').toLowerCase()] || '#6b7280'; }
 
-
-function loadGraph(data){
-  G=data;
-  document.getElementById('drop-overlay').classList.add('hidden');
-  updateStats();renderWaste();renderCycles();renderResolution();renderGraph();
-}
-
-function updateStats(){
-  if(!G)return;
-  const s=G.summary||{},c=s.counts||{};
-  const dead=(c.ORPHAN||0)+(c.ISLAND||0);
-  document.getElementById('s-files').textContent  =G.nodes.length;
-  document.getElementById('s-edges').textContent  =G.edges.length;
-  document.getElementById('s-orphans').textContent=dead;
-  document.getElementById('s-cycles').textContent =s.cycle_count||0;
-  const h=s.health_score;
-  document.getElementById('s-health').textContent =h!=null?h+'/100':'—';
-  document.getElementById('hnum').textContent=h??'—';
-  const el_t=document.getElementById('elapsed');
-  if(el_t&&G.meta?.elapsed_s!=null)el_t.textContent=G.meta.elapsed_s+'s';
-  document.getElementById('health-pill').classList.remove('hidden');
-  const sl=document.getElementById('s-langs');
-  if(sl){const langs=G.meta?.languages||[];sl.textContent=langs.length>0?langs.join(', ').replace('typescript','ts').replace('javascript','js'):'—';}
-  const imp=G.meta?.import_stats||{};
-  const tot=Object.values(imp).reduce((a,b)=>a+b,0);
-  const loc=imp.local||0;
-  const pct=tot>0?Math.round(loc/tot*100):0;
-  const rel=document.getElementById('s-resolved');
-  if(rel&&tot>0){rel.textContent=pct+'%';rel.style.color=pct>80?'#00ff88':pct>50?'#ffaa00':'#ff3557';}
-}
-
-
-function renderResolution(){
-  if(!G)return;
-  const imp=G.meta?.import_stats||{};
-  const tot=Object.values(imp).reduce((a,b)=>a+b,0);
-  if(!tot)return;
-  const sec=document.getElementById('res-section');
-  const div=document.getElementById('res-stats');
-  if(!sec||!div)return;
-  sec.style.display='block';
-  const pct=tot>0?Math.round((imp.local||0)/tot*100):0;
-  const bar_w=pct;
-  div.innerHTML=`
-    <div style="margin-bottom:8px">
-      <div style="height:3px;background:#1f2540;border-radius:2px;margin-bottom:6px">
-        <div style="height:100%;width:${bar_w}%;background:${pct>80?'#00ff88':pct>50?'#ffaa00':'#ff3557'};border-radius:2px;transition:width .4s"></div>
-      </div>
-    </div>
-    <div class="mr"><span class="mk">local (edges)</span><span class="mv" style="color:#00ff88">${imp.local||0}</span></div>
-    <div class="mr"><span class="mk">stdlib</span><span class="mv">${imp.stdlib||0}</span></div>
-    <div class="mr"><span class="mk">third-party</span><span class="mv">${imp.third_party||0}</span></div>
-    <div class="mr"><span class="mk">unknown</span><span class="mv" style="color:${(imp.unknown||0)>0?'#ff3557':'#3d4a70'}">${imp.unknown||0}</span></div>
-    <div class="mr" style="margin-top:4px;border-top:1px solid #1f2540;padding-top:4px">
-      <span class="mk">resolution rate</span>
-      <span class="mv" style="color:${pct>80?'#00ff88':pct>50?'#ffaa00':'#ff3557'}">${pct}%</span>
-    </div>
-  `;
-}
-
-function renderWaste(){
-  if(!G)return;
-  const w=G.waste||[];
-  const badge=document.getElementById('waste-badge');
-  badge.textContent=w.length;
-  badge.className='pb'+(w.length===0?' z':'');
-  const list=document.getElementById('waste-list');
-  if(!w.length){
-    list.innerHTML='<div class="we"><big>✓</big>No dead files</div>';return;
-  }
-  const islands=w.filter(x=>x.classification==='ISLAND');
-  const orphans=w.filter(x=>x.classification==='ORPHAN');
-  let h='';
-  if(islands.length){
-    const byId={};
-    islands.forEach(x=>{const k=x.island_id>=0?x.island_id:'x';(byId[k]=byId[k]||[]).push(x)});
-    Object.entries(byId).forEach(([id,grp])=>{
-      h+=`<div class="ws-label">Island cluster ${parseInt(id)+1} — ${grp.length} file${grp.length>1?'s':''}</div>`;
-      grp.forEach(x=>{h+=wrow(x,'#b06fff')});
-    });
-  }
-  if(orphans.length){
-    h+=`<div class="ws-label">Orphans — ${orphans.length} file${orphans.length>1?'s':''}</div>`;
-    orphans.forEach(x=>{h+=wrow(x,'#ff3557')});
-  }
-  list.innerHTML=h;
-  list.querySelectorAll('.wi').forEach(el=>
-    el.addEventListener('click',()=>focusNode(el.dataset.id)));
-}
-
-function wrow(w,dot){
-  const parts=w.id.split('/');const name=parts.pop();const dir=parts.join('/')||'.';
-  return `<div class="wi" data-id="${w.id}">
-    <div class="wi-d" style="background:${dot}"></div>
-    <div class="wi-i"><div class="wi-n">${name}</div><div class="wi-p">${dir}</div></div>
-  </div>`;
-}
-
-function renderCycles(){
-  if(!G)return;
-  const cyc=G.cycles||[];
-  const el=document.getElementById('cycle-banner');
-  if(!cyc.length){el.classList.add('hidden');return;}
-  el.classList.remove('hidden');
-  document.getElementById('cycle-text').textContent=
-    `${cyc.length} circular dependenc${cyc.length>1?'ies':'y'} — click to inspect`;
-  el.onclick=()=>{if(cyc[0]?.length)focusNode(cyc[0][0]);toast('Cycle: '+cyc[0].join(' → '))};
-}
-
-function renderGraph(){
-  if(!G)return;
-  const svg=d3.select('#graph');
-  d3.select('#links-layer').selectAll('*').remove();
-  d3.select('#nodes-layer').selectAll('*').remove();
-  const W=svg.node().clientWidth||(window.innerWidth-512);
-  const H=svg.node().clientHeight||(window.innerHeight-44);
-
-  const visN=G.nodes.filter(n=>{
-    if(hideTests&&n.classification==='TEST')return false;
-    if(hideOrphans&&(n.classification==='ORPHAN'||n.classification==='ISLAND'))return false;
-    if(activeLangs&&!activeLangs.has(n.language))return false;
-    return true;
-  });
-  const visIds=new Set(visN.map(n=>n.id));
-  const visE=G.edges.filter(e=>visIds.has(e.source)&&visIds.has(e.target));
-
-  simN=visN.map(n=>({...n}));
-  simE=visE.map(e=>({...e}));
-
-  const cycleSet=new Set();
-  (G.cycles||[]).forEach(c=>c.forEach(id=>cycleSet.add(id)));
-
-  if(sim)sim.stop();
-  sim=d3.forceSimulation(simN)
-    .force('link',d3.forceLink(simE).id(d=>d.id).distance(90).strength(0.4))
-    .force('charge',d3.forceManyBody().strength(-260).distanceMax(500))
-    .force('center',d3.forceCenter(W/2,H/2))
-    .force('collide',d3.forceCollide(16))
-    .alphaDecay(0.025);
-
-  const lk=d3.select('#links-layer').selectAll('line').data(simE).join('line')
-    .attr('class','link').attr('stroke','#1f2540')
-    .attr('stroke-opacity',0.7).attr('marker-end','url(#arr)');
-
-  const nd=d3.select('#nodes-layer').selectAll('g.node').data(simN,d=>d.id).join('g')
-    .attr('class','node').call(makeDrag(sim)).on('click',onNodeClick);
-
-  nd.append('circle')
-    .attr('r',d=>d.classification==='ENTRY'?9:d.classification==='ORPHAN'?6:7)
-    .attr('fill',d=>cc(d.classification).f)
-    .attr('stroke',d=>cycleSet.has(d.id)?'#ffaa00':cc(d.classification).s)
-    .attr('stroke-width',d=>cycleSet.has(d.id)?2:1.5);
-
-  // Language ring (outer)
-  nd.append('circle')
-    .attr('r',d=>d.classification==='ENTRY'?11:d.classification==='ORPHAN'?8:9)
-    .attr('fill','none')
-    .attr('stroke',d=>lc(d.language))
-    .attr('stroke-width',1)
-    .attr('stroke-opacity',0.4);
-
-  nd.append('text').attr('dy','-10').attr('text-anchor','middle')
-    .text(d=>d.name).style('display',showLabels?null:'none');
-
-  sim.on('tick',()=>{
-    lk.attr('x1',d=>d.source.x).attr('y1',d=>d.source.y)
-      .attr('x2',d=>d.target.x).attr('y2',d=>d.target.y);
-    nd.attr('transform',d=>`translate(${d.x},${d.y})`);
-  });
-
-  zb=d3.zoom().scaleExtent([0.03,10])
-    .on('zoom',e=>d3.select('#zoom-layer').attr('transform',e.transform));
-  svg.call(zb);
-  svg.on('click',e=>{
-    if(e.target===svg.node()||e.target.id==='zoom-layer')clearSel();
-  });
-}
-
-function onNodeClick(ev,d){ev.stopPropagation();selectNode(d.id)}
-
-function selectNode(id){
-  selId=id;
-  const node=G.nodes.find(n=>n.id===id);
-  if(!node)return;
-
-  d3.select('#links-layer').selectAll('line')
-    .attr('stroke',e=>{
-      const s=e.source.id||e.source,t=e.target.id||e.target;
-      return(s===id||t===id)?'rgba(0,229,255,.7)':'#1f2540';
-    })
-    .attr('stroke-opacity',e=>{
-      const s=e.source.id||e.source,t=e.target.id||e.target;
-      return(s===id||t===id)?1:0.2;
-    })
-    .attr('marker-end',e=>{
-      const s=e.source.id||e.source,t=e.target.id||e.target;
-      return(s===id||t===id)?'url(#arr-hi)':'url(#arr)';
-    });
-
-  d3.selectAll('.node').classed('active',n=>n.id===id);
-  document.querySelectorAll('.wi').forEach(el=>
-    el.classList.toggle('sel',el.dataset.id===id));
-
-  const inE =G.edges.filter(e=>(e.target===id||(e.target&&e.target.id===id)));
-  const outE=G.edges.filter(e=>(e.source===id||(e.source&&e.source.id===id)));
-  const cls=node.classification||'ORPHAN';
-
-  document.getElementById('ip').style.display='none';
-  document.getElementById('ic').style.display='block';
-  document.getElementById('iname').textContent=node.filepath;
-
-  const cl=cls.toLowerCase();
-  document.getElementById('imeta').innerHTML=`
-    <div class="mr"><span class="mk">class</span><span class="mv ${cl}">${cls}</span></div>
-    <div class="mr"><span class="mk">depth</span><span class="mv">${node.depth>=0?node.depth:'∞'}</span></div>
-    <div class="mr"><span class="mk">size</span><span class="mv">${fb(node.size)}</span></div>
-    <div class="mr"><span class="mk">inbound</span><span class="mv">${inE.length}</span></div>
-    <div class="mr"><span class="mk">outbound</span><span class="mv">${outE.length}</span></div>
-    ${node.island_id>=0?`<div class="mr"><span class="mk">island</span><span class="mv" style="color:#b06fff">cluster ${node.island_id+1}</span></div>`:''}
-    <div class="mr"><span class="mk">language</span><span class="mv" style="color:${lc(node.language)}">${node.language||'—'}</span></div>
-  `;
-
-  const chips=(el,items,dir)=>{
-    if(!items.length){el.innerHTML='<div class="le">none</div>';return;}
-    el.innerHTML='<div class="ll">'+items.map(e=>{
-      const s=e.source.id||e.source,t=e.target.id||e.target;
-      const lbl=dir==='in'?s:t;
-      return `<div class="lc ${dir}" onclick="focusNode('${lbl}')">${lbl}</div>`;
-    }).join('')+'</div>';
-  };
-  chips(document.getElementById('iout'),outE,'out');
-  chips(document.getElementById('iin'),inE,'in');
-}
-
-function clearSel(){
-  selId=null;
-  d3.select('#links-layer').selectAll('line')
-    .attr('stroke','#1f2540').attr('stroke-opacity',0.7)
-    .attr('marker-end','url(#arr)');
-  d3.selectAll('.node').classed('active',false);
-  document.querySelectorAll('.wi').forEach(el=>el.classList.remove('sel'));
-  document.getElementById('ip').style.display='';
-  document.getElementById('ic').style.display='none';
-  document.getElementById('iout').innerHTML='';
-  document.getElementById('iin').innerHTML='';
-}
-
-function focusNode(id){
-  const sn=simN.find(n=>n.id===id);
-  if(sn&&zb){
-    const svg=d3.select('#graph');
-    const W=svg.node().clientWidth,H=svg.node().clientHeight;
-    svg.transition().duration(450).call(
-      zb.transform,
-      d3.zoomIdentity.translate(W/2,H/2).scale(1.8).translate(-sn.x,-sn.y)
-    );
-  }
-  selectNode(id);
-}
-
-function makeDrag(s){
-  return d3.drag()
-    .on('start',(ev,d)=>{if(!ev.active)s.alphaTarget(0.3).restart();d.fx=d.x;d.fy=d.y})
-    .on('drag', (ev,d)=>{d.fx=ev.x;d.fy=ev.y})
-    .on('end',  (ev,d)=>{if(!ev.active)s.alphaTarget(0);d.fx=null;d.fy=null});
-}
-
-// Controls
-document.getElementById('btn-waste').addEventListener('click',function(){
-  document.getElementById('waste-panel').classList.toggle('collapsed');
-  this.classList.toggle('on');
-  setTimeout(()=>{if(G)renderGraph()},220);
-});
-document.getElementById('btn-insp').addEventListener('click',function(){
-  document.getElementById('inspector').classList.toggle('collapsed');
-  this.classList.toggle('on');
-  setTimeout(()=>{if(G)renderGraph()},220);
-});
-document.getElementById('btn-labels').addEventListener('click',function(){
-  showLabels=!showLabels;this.classList.toggle('on',showLabels);
-  d3.selectAll('.node text').style('display',showLabels?null:'none');
-});
-document.getElementById('btn-ht').addEventListener('click',function(){
-  hideTests=!hideTests;this.classList.toggle('on',hideTests);if(G)renderGraph();
-});
-document.getElementById('btn-ho').addEventListener('click',function(){
-  hideOrphans=!hideOrphans;this.classList.toggle('on',hideOrphans);if(G)renderGraph();
-});
-document.getElementById('btn-reset').addEventListener('click',()=>{
-  if(zb)d3.select('#graph').transition().duration(400).call(zb.transform,d3.zoomIdentity);
-});
-
-// File loading
-function loadFile(file){
-  if(!file)return;
-  if(!file.name.endsWith('.json')){toast('Need a .json file');return;}
-  const r=new FileReader();
-  r.onload=e=>{
-    try{
-      const d=JSON.parse(e.target.result);
-      if(!d.nodes||!d.edges){toast('Invalid graph.json');return;}
-      loadGraph(d);
-      toast(`Loaded ${d.nodes.length} files · ${d.edges.length} edges`);
-    }catch{toast('Failed to parse JSON');}
-  };
-  r.readAsText(file);
-}
-document.getElementById('btn-open').addEventListener('click',()=>
-  document.getElementById('file-input').click());
-document.getElementById('file-input').addEventListener('change',e=>
-  loadFile(e.target.files[0]));
-
-const df=document.getElementById('drop-frame');
-document.addEventListener('dragover',e=>{e.preventDefault();df.classList.add('over')});
-document.addEventListener('dragleave',()=>df.classList.remove('over'));
-document.addEventListener('drop',e=>{
-  e.preventDefault();df.classList.remove('over');loadFile(e.dataTransfer.files[0]);
-});
-
-if(location.protocol!=='file:'){
-  fetch('graph.json')
-    .then(r=>r.ok?r.json():Promise.reject())
-    .then(d=>{loadGraph(d);toast(`Loaded ${d.nodes.length} files`);})
-    .catch(()=>{});
-}
-
-document.getElementById('btn-lang').addEventListener('click',function(){
-  if(!G)return;
-  const langs=[...new Set(G.nodes.map(n=>n.language))].filter(Boolean);
-  if(!langs.length)return;
-  if(!activeLangs){
-    // cycle to first language
-    activeLangs=new Set([langs[0]]);
-    this.textContent=langs[0];
-    this.classList.add('on');
-  } else {
-    const cur=[...activeLangs][0];
-    const idx=langs.indexOf(cur);
-    const next=langs[(idx+1)%langs.length];
-    if(next===langs[0]&&idx===langs.length-1){
-      // wrap back to all
-      activeLangs=null;
-      this.textContent='all languages';
-      this.classList.remove('on');
-    } else {
-      activeLangs=new Set([next]);
-      this.textContent=next;
+    function loadGraph(data) {
+      G = data;
+      document.getElementById('drop-overlay').classList.add('hidden');
+      updateStats(); renderWaste(); renderGraph();
+      if (G.summary?.cycle_count > 0) toast(`Alert: ${G.summary.cycle_count} circular dependencies found!`);
     }
-  }
-  renderGraph();
-});
 
-window.addEventListener('resize',()=>{if(G)renderGraph()});
+    function updateStats() {
+      if (!G) return;
+      const s = G.summary || {}, c = s.counts || {};
+      const dead = (c.ORPHAN || 0) + (c.ISLAND || 0);
 
-function fb(b){
-  if(!b)return'—';
-  if(b<1024)return`${b} B`;
-  if(b<1048576)return`${(b/1024).toFixed(1)} KB`;
-  return`${(b/1048576).toFixed(1)} MB`;
-}
-let _tt;
-function toast(msg){
-  const el=document.getElementById('toast');
-  el.textContent=msg;el.classList.add('show');
-  clearTimeout(_tt);_tt=setTimeout(()=>el.classList.remove('show'),2400);
-}
-</script>
+      document.getElementById('s-files').textContent = G.nodes.length;
+      document.getElementById('s-edges').textContent = G.edges.length;
+      document.getElementById('s-orphans').textContent = dead;
+      document.getElementById('s-cycles').textContent = s.cycle_count || 0;
+
+      const h = s.health_score;
+      document.getElementById('s-health').textContent = h ?? '—';
+      const pill = document.getElementById('health-pill');
+      pill.querySelector('span').textContent = h ?? '—';
+      pill.classList.remove('hidden');
+
+      if (G.meta?.elapsed_s) document.getElementById('elapsed').textContent = `Analysed in ${G.meta.elapsed_s}s`;
+
+      // Language count
+      const langs = G.meta?.languages || [];
+      document.getElementById('s-langs').textContent = langs.length;
+
+      // Resolution rate
+      const imp = G.meta?.import_stats || {};
+      const tot = Object.values(imp).reduce((a, b) => a + b, 0);
+      const pct = tot > 0 ? Math.round((imp.local || 0) / tot * 100) : 0;
+      const sRes = document.getElementById('s-resolved');
+      sRes.textContent = pct + '%';
+      sRes.style.color = pct > 80 ? 'var(--green)' : pct > 50 ? 'var(--amber)' : 'var(--red)';
+    }
+
+    function renderWaste() {
+      if (!G) return;
+      const w = G.waste || [];
+      const badge = document.getElementById('waste-badge');
+      badge.textContent = w.length;
+      badge.className = 'badge' + (w.length === 0 ? ' ok' : '');
+
+      const list = document.getElementById('waste-list');
+      if (!w.length) {
+        list.innerHTML = '<div style="padding:40px;text-align:center;color:var(--green);font-size:11px">✓ Clean codebase</div>';
+        return;
+      }
+
+      let html = '';
+      const islands = w.filter(x => x.classification === 'ISLAND');
+      const orphans = w.filter(x => x.classification === 'ORPHAN');
+
+      if (islands.length) {
+        const byId = {}; islands.forEach(x => { const k = x.island_id >= 0 ? x.island_id : 'x'; (byId[k] = byId[k] || []).push(x) });
+        Object.entries(byId).forEach(([id, grp]) => {
+          html += `<div class="list-label">Isolated Cluster ${parseInt(id) + 1}</div>`;
+          grp.forEach(x => html += itemRow(x, 'var(--purple)'));
+        });
+      }
+      if (orphans.length) {
+        html += `<div class="list-label">Orphan Files</div>`;
+        orphans.forEach(x => html += itemRow(x, 'var(--red)'));
+      }
+      list.innerHTML = html;
+      list.querySelectorAll('.list-item').forEach(el => el.onclick = () => focusNode(el.dataset.id));
+    }
+
+    function itemRow(node, color) {
+      const parts = node.id.split('/'); const name = parts.pop(); const dir = parts.join('/') || '.';
+      return `<div class="list-item" data-id="${node.id}">
+    <div class="item-dot" style="background:${color}"></div>
+    <div class="item-info"><div class="item-name">${name}</div><div class="item-path">${dir}</div></div>
+  </div>`;
+    }
+
+    function renderGraph() {
+      if (!G) return;
+      const svg = d3.select('#graph');
+      const layers = { links: d3.select('#links-layer'), nodes: d3.select('#nodes-layer') };
+      layers.links.selectAll('*').remove(); layers.nodes.selectAll('*').remove();
+
+      const W = svg.node().clientWidth || 1000, H = svg.node().clientHeight || 800;
+
+      const visN = G.nodes.filter(n => {
+        if (hideTests && n.classification === 'TEST') return false;
+        if (hideOrphans && (n.classification === 'ORPHAN' || n.classification === 'ISLAND')) return false;
+        if (activeLangs && !activeLangs.has(n.language)) return false;
+        return true;
+      });
+      const visIds = new Set(visN.map(n => n.id));
+      const visE = G.edges.filter(e => visIds.has(e.source) && visIds.has(e.target));
+
+      simN = visN.map(n => ({ ...n }));
+      simE = visE.map(e => ({ ...e }));
+
+      const cycleSet = new Set(); (G.cycles || []).forEach(c => c.forEach(id => cycleSet.add(id)));
+
+      if (sim) sim.stop();
+      sim = d3.forceSimulation(simN)
+        .force('link', d3.forceLink(simE).id(d => d.id).distance(100).strength(0.3))
+        .force('charge', d3.forceManyBody().strength(-300).distanceMax(600))
+        .force('center', d3.forceCenter(W / 2, H / 2))
+        .force('collide', d3.forceCollide(24))
+        .alphaDecay(0.02);
+
+      const lks = layers.links.selectAll('line').data(simE).join('line')
+        .attr('class', 'link').attr('stroke', 'rgba(31,37,64,0.7)')
+        .attr('marker-end', 'url(#arr)');
+
+      const nds = layers.nodes.selectAll('g.node').data(simN, d => d.id).join('g')
+        .attr('class', 'node').call(d3.drag()
+          .on('start', (ev, d) => { if (!ev.active) sim.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y })
+          .on('drag', (ev, d) => { d.fx = ev.x; d.fy = ev.y })
+          .on('end', (ev, d) => { if (!ev.active) sim.alphaTarget(0); d.fx = null; d.fy = null }))
+        .on('click', (ev, d) => { ev.stopPropagation(); selectNode(d.id) });
+
+      nds.append('circle')
+        .attr('r', d => d.classification === 'ENTRY' ? 10 : 7)
+        .attr('fill', d => getTheme(d.classification).f)
+        .attr('stroke', d => cycleSet.has(d.id) ? 'var(--amber)' : getTheme(d.classification).s)
+        .attr('stroke-width', d => cycleSet.has(d.id) ? 2.5 : 1.5);
+
+      // Outer language ring
+      nds.append('circle').attr('r', d => d.classification === 'ENTRY' ? 12 : 9).attr('fill', 'none')
+        .attr('stroke', d => getLangColor(d.language)).attr('stroke-width', 0.8).attr('stroke-opacity', 0.6);
+
+      nds.append('text').attr('dy', '-14').attr('text-anchor', 'middle')
+        .text(d => d.name).style('display', showLabels ? null : 'none');
+
+      sim.on('tick', () => {
+        lks.attr('x1', d => d.source.x).attr('y1', d => d.source.y).attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+        nds.attr('transform', d => `translate(${d.x},${d.y})`);
+      });
+
+      zb = d3.zoom().scaleExtent([0.1, 8]).on('zoom', e => d3.select('#zoom-layer').attr('transform', e.transform));
+      svg.call(zb);
+      svg.on('click', e => { if (e.target === svg.node()) clearSel(); });
+    }
+
+    function selectNode(id) {
+      selId = id;
+      const node = G.nodes.find(n => n.id === id);
+      if (!node) return;
+
+      d3.select('#links-layer').selectAll('line')
+        .attr('stroke', e => { const s = e.source.id || e.source, t = e.target.id || e.target; return (s === id || t === id) ? 'var(--cyan)' : 'rgba(31,37,64,0.3)' })
+        .attr('stroke-opacity', e => { const s = e.source.id || e.source, t = e.target.id || e.target; return (s === id || t === id) ? 1 : 0.1 })
+        .attr('marker-end', e => { const s = e.source.id || e.source, t = e.target.id || e.target; return (s === id || t === id) ? 'url(#arr-hi)' : 'url(#arr)' });
+
+      d3.selectAll('.node').classed('active', n => n.id === id);
+      document.querySelectorAll('.list-item').forEach(el => el.classList.toggle('active', el.dataset.id === id));
+
+      const inE = G.edges.filter(e => (e.target.id || e.target) === id);
+      const outE = G.edges.filter(e => (e.source.id || e.source) === id);
+
+      document.getElementById('ip').style.display = 'none';
+      document.getElementById('ic').style.display = 'block';
+      document.getElementById('iname').textContent = node.filepath;
+
+      const cl = node.classification.toLowerCase();
+      document.getElementById('imeta').innerHTML = `
+    <div class="kv-row"><span class="k">Class</span><span class="v" style="color:var(--${cl === 'entry' ? 'green' : cl === 'orphan' ? 'red' : 'cyan'})">${node.classification}</span></div>
+    <div class="kv-row"><span class="k">Size</span><span class="v">${formatSize(node.size)}</span></div>
+    <div class="kv-row"><span class="k">Inbound</span><span class="v">${inE.length}</span></div>
+    <div class="kv-row"><span class="k">Outbound</span><span class="v">${outE.length}</span></div>
+    <div class="kv-row"><span class="k">Language</span><span class="v" style="color:${getLangColor(node.language)}">${node.language || '—'}</span></div>
+  `;
+
+      const renderChips = (el, edges, dir) => {
+        if (!edges.length) { el.innerHTML = '<div style="color:var(--dim);font-size:10px">None</div>'; return; }
+        el.innerHTML = '<div class="chip-cont">' + edges.map(e => {
+          const lbl = dir === 'in' ? (e.source.id || e.source) : (e.target.id || e.target);
+          return `<div class="chip ${dir}" onclick="focusNode('${lbl}')">${lbl}</div>`;
+        }).join('') + '</div>';
+      };
+      renderChips(document.getElementById('iout'), outE, 'out');
+      renderChips(document.getElementById('iin'), inE, 'in');
+    }
+
+    function clearSel() {
+      selId = null;
+      d3.select('#links-layer').selectAll('line').attr('stroke', 'rgba(31,37,64,0.7)').attr('stroke-opacity', 1).attr('marker-end', 'url(#arr)');
+      d3.selectAll('.node').classed('active', false);
+      document.querySelectorAll('.list-item').forEach(el => el.classList.remove('active'));
+      document.getElementById('ip').style.display = 'block';
+      document.getElementById('ic').style.display = 'none';
+    }
+
+    function focusNode(id) {
+      const sn = simN.find(n => n.id === id);
+      if (sn && zb) {
+        const svg = d3.select('#graph');
+        const W = svg.node().clientWidth, H = svg.node().clientHeight;
+        svg.transition().duration(600).call(zb.transform, d3.zoomIdentity.translate(W / 2, H / 2).scale(1.8).translate(-sn.x, -sn.y));
+      }
+      selectNode(id);
+    }
+
+    // Global Actions
+    document.getElementById('btn-waste').onclick = function () {
+      document.getElementById('waste-panel').classList.toggle('collapsed');
+      this.classList.toggle('on');
+      setTimeout(() => renderGraph(), 350);
+    }
+    document.getElementById('btn-insp').onclick = function () {
+      document.getElementById('inspector').classList.toggle('collapsed');
+      this.classList.toggle('on');
+      setTimeout(() => renderGraph(), 350);
+    }
+    document.getElementById('btn-labels').onclick = function () {
+      showLabels = !showLabels; this.classList.toggle('on');
+      d3.selectAll('.node text').style('display', showLabels ? null : 'none');
+    }
+    document.getElementById('btn-ht').onclick = function () {
+      hideTests = !hideTests; this.classList.toggle('on'); renderGraph();
+    }
+    document.getElementById('btn-lang').onclick = function () {
+      if (!G) return;
+      const langs = [...new Set(G.nodes.map(n => n.language))].filter(Boolean);
+      if (!langs.length) return;
+      if (!activeLangs) { activeLangs = new Set([langs[0]]); this.textContent = langs[0]; this.classList.add('on'); }
+      else {
+        const cur = [...activeLangs][0]; const idx = langs.indexOf(cur); const next = langs[(idx + 1) % langs.length];
+        if (next === langs[0] && idx === langs.length - 1) { activeLangs = null; this.textContent = 'all languages'; this.classList.remove('on'); }
+        else { activeLangs = new Set([next]); this.textContent = next; }
+      }
+      renderGraph();
+    }
+    document.getElementById('btn-reset').onclick = () => {
+      if (zb) d3.select('#graph').transition().duration(500).call(zb.transform, d3.zoomIdentity);
+    }
+
+    // Loader
+    function loadFile(file) {
+      if (!file || !file.name.endsWith('.json')) return toast('Please select a valid graph.json');
+      const r = new FileReader();
+      r.onload = e => {
+        try { loadGraph(JSON.parse(e.target.result)); toast('Graph loaded successfully'); }
+        catch { toast('Error parsing JSON'); }
+      };
+      r.readAsText(file);
+    }
+    document.getElementById('btn-open').onclick = () => document.getElementById('file-input').click();
+    document.getElementById('file-input').onchange = e => loadFile(e.target.files[0]);
+
+    document.addEventListener('dragover', e => { e.preventDefault(); document.getElementById('drop-frame')?.classList.add('over') });
+    document.addEventListener('drop', e => { e.preventDefault(); loadFile(e.dataTransfer.files[0]) });
+
+    if (location.protocol !== 'file:') {
+      fetch('graph.json').then(r => r.ok ? r.json() : null).then(d => { if (d) loadGraph(d) }).catch(() => { });
+    }
+
+    function formatSize(b) {
+      if (!b) return '0 B'; if (b < 1024) return b + ' B'; if (b < 1048576) return (b / 1024).toFixed(1) + ' KB';
+      return (b / 1048576).toFixed(1) + ' MB';
+    }
+    let _tt; function toast(m) {
+      const el = document.getElementById('toast'); el.textContent = m; el.classList.add('show');
+      clearTimeout(_tt); _tt = setTimeout(() => el.classList.remove('show'), 3000);
+    }
+    window.onresize = () => renderGraph();
+  </script>
 </body>
+
 </html>
