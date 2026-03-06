@@ -23,7 +23,7 @@ from typing import Optional
 
 
 CACHE_FILENAME = '.orbits_cache.json'
-CACHE_VERSION  = 3   # bump this to invalidate all caches on schema change
+CACHE_VERSION  = 4   # bump this to invalidate all caches on schema change
 
 
 @dataclass

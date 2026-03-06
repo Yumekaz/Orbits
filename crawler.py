@@ -79,7 +79,7 @@ def crawl(root: str | Path) -> Iterator[Path]:
 def crawl_by_language(root: str | Path) -> dict[str, list[Path]]:
     """
     Same as crawl() but buckets files by language.
-    Phase 0 only uses 'python' — future phases add more.
+    Legacy helper used by earlier phases. Phase 3 uses lang_dispatch.crawl_all().
     """
     LANGUAGE_MAP = {
         '.py': 'python',

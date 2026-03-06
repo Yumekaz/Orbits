@@ -25,6 +25,7 @@ MANIFEST
 # Environment
 .env
 .venv
+.venv/
 venv/
 ENV/
 env.bak/
@@ -68,3 +69,4 @@ __MACOSX/
 *.sqlite
 *.sqlite3
 .orbits_cache.json
+graph.json

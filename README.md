@@ -1,79 +1,104 @@
-# Orbits ⬡
+# Orbits
 
-**Orbits** is a high-performance codebase dependency visualizer and dead-code detector for Python. It transforms complex import structures into interactive, actionable graphs, allowing developers to identify architectural bottlenecks, circular dependencies, and isolated "islands" of code.
+Orbits analyzes a source tree, resolves project-local dependencies, and emits a `graph.json` file for the bundled visualizer.
 
-![Orbits Interface](/C:/Users/Mihir/.gemini/antigravity/brain/ed4afcd8-434b-4337-92bf-6d3b999e7b6b/orbits_real_world_test_1772646282545.png)
+The current implementation now has first-class extraction and resolution for:
 
----
+- Python
+- JavaScript / TypeScript / TSX
+- Go
+- C / C++
+- Java
+- Kotlin
+- Generic fallback for everything else
 
-## ⚡ Key Features (Phase 3)
+## Architecture
 
-- **Multi-Language Analysis**: Native support for **Python**, **JavaScript/TypeScript**, and **Go**.
-- **Interactive Dependency Mapping**: Explore your codebase through a force-directed graph powered by D3.js.
-- **Parallel Worker Engine**: High-performance analysis utilizing multiple CPU cores for massive codebases.
-- **Intelligent Caching Layer**: Accelerated re-scans using a persistent analysis cache.
-- **Advanced Import Resolution**: Classifies imports into **Local**, **Standard Library**, and **Third-Party**.
-- **Project Structure Intelligence**: Automatically detects `pyproject.toml`, `setup.cfg`, and `src/` layouts.
-- **Dead Code Detection**: Instantly identify **Orphans** (isolated files) and **Islands** (disconnected clusters).
-- **Codebase Health Score**: A proprietary 0-100 metric based on technical debt.
-- **AST-Powered Parsing**: Deep, high-accuracy extraction using native language parsers.
+The pipeline is:
 
----
+1. Crawl the project tree while skipping noise.
+2. Extract imports/includes with language-specific extractors.
+3. Resolve local dependencies with language-specific resolvers.
+4. Enrich the graph with cycles, islands, orphans, depth, and health.
+5. Serve `visualizer.html` against the generated `graph.json`.
 
-## 🛠️ Architecture
+## Phase Status
 
-Orbits follows a modular analysis pipeline:
+### Phase 2: Resolution Engine
 
-1.  **Crawl**: Recursively scans the project root while respecting `.gitignore` and skipping noise (e.g., `venv`, `node_modules`).
-2.  **Extract**: Parses Python files with `ast` to retrieve every `import` and `from ... import` statement.
-3.  **Resolve**: Maps import strings to absolute file system paths.
-4.  **Analyze**: Processes the raw graph through the **Graph Engine** to detect cycles and calculate health.
-5.  **Visualize**: Serves a local web interface to explore the results interactively.
+Implemented language-specific resolution for:
 
----
+- Python: package roots, `src/` layouts, relative imports, stdlib and third-party classification.
+- JS / TS / TSX: relative imports, extension omission, index files, `baseUrl`, and tsconfig path aliases.
+- Go: `go.mod` module-aware local package resolution.
+- C / C++: quoted include resolution using source-local paths plus include directories inferred from `compile_commands.json`, `CMakeLists.txt`, `include/`, and `src/`.
+- Java / Kotlin: package-to-path resolution against common source roots such as `src/main/java`, `src/main/kotlin`, and related layouts.
+- Unknown languages: conservative regex fallback.
 
-## 🚀 Quick Start
+### Phase 3: Multi-Language Extraction
 
-### 1. Requirements
-- Python 3.8+
-- No external Python dependencies required (standard library only for the analyzer).
+Implemented with tree-sitter-backed extraction for:
 
-### 2. Run Analysis
-To analyze a project and start the visualizer immediately:
+- Python
+- JavaScript / TypeScript / TSX
+- Go
+- C / C++
+- Java
+- Kotlin
+
+The analyzer uses one worker per language when the environment allows subprocess workers and falls back to sequential execution when process creation is blocked.
+
+## Local Runtime Setup
+
+Tree-sitter grammars are installed in the workspace venv at `.venv/`.
+The runtime bootstraps that local venv automatically, so `python analyzer.py ...` works from the repo without requiring global installs.
+
+## Usage
+
+Analyze a project:
 
 ```bash
-python analyzer.py /path/to/your/project --serve
+python analyzer.py /path/to/project
 ```
 
-### 3. CLI Options
-- `-o, --output`: Specify a custom JSON filename (default: `graph.json`).
-- `--port`: Use a specific port for the local server (default: `8765`).
-- `--serve`: Automatically open the browser after analysis.
+Analyze and open the visualizer:
 
----
-
-## 📁 Project Structure
-
-```text
-├── analyzer.py       # Main CLI entry point
-├── worker.py         # Parallel analysis orchestrator
-├── lang_dispatch.py  # Multi-language routing engine
-├── cache.py          # Persistent analysis cache
-├── graph_engine.py   # Core analysis & classification engine
-├── extractor.py      # Main extractor hub
-├── extractors/       # Language-specific AST walkers (PY, JS, GO)
-├── resolver.py       # Main resolver hub
-├── resolvers/        # Language-specific dependency resolvers
-├── crawler.py        # File system walker
-└── visualizer.html   # D3.js powered UI
+```bash
+python analyzer.py /path/to/project --serve
 ```
 
----
+Write output anywhere and still serve it correctly:
 
-## 🏗️ Future Roadmap
-- **Phase 2**: Multi-language support (JS/TS, Go, Rust).
-- **Phase 3**: Cross-language dependency resolution.
-- **Phase 4**: Real-time "Watch Mode" for live visualization changes.
+```bash
+python analyzer.py /path/to/project -o C:/temp/my-graph.json --serve
+```
 
----
-*Created with ❤️ for Python Architects.*
+## Behavior Guarantees
+
+- Analysis does not edit the target repository's `.gitignore`.
+- Cache writes are limited to `<project_root>/.orbits_cache.json`.
+- `--serve` does not depend on changing the process working directory.
+- Missing parser support is reported in CLI output and metadata instead of being silently treated as an empty graph.
+
+## Key Files
+
+- `analyzer.py`: CLI entry point and HTTP serving.
+- `lang_dispatch.py`: crawling, worker dispatch, cache integration, metadata.
+- `worker.py`: per-language extraction and resolution execution.
+- `extractors/`: tree-sitter and fallback extractors.
+- `resolvers/`: language-specific resolution logic.
+- `graph_engine.py`: graph enrichment and summary metrics.
+- `visualizer.html`: bundled UI.
+
+## Verification
+
+The repo includes regression coverage for:
+
+- non-mutating analysis behavior
+- serving behavior
+- Python import-from resolution
+- TypeScript alias resolution
+- Go module resolution
+- C include resolution
+- Java and Kotlin package resolution
+- end-to-end graph shape

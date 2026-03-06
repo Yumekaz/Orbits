@@ -1,5 +1,6 @@
 """
-extractor.py — Orbits Phase 2.
+extractor.py - legacy Phase 2 module.
+Not used by the current Phase 3 pipeline; retained for reference.
 AST walker only. All resolution logic lives in resolver.py.
 """
 

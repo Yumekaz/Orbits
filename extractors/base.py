@@ -1,5 +1,5 @@
 """
-extractors/base.py — Orbits Phase 3
+extractors/base.py - Orbits Phase 3
 
 The contract every language extractor must implement.
 The graph engine and analyzer only talk to this interface.
@@ -21,6 +21,9 @@ class RawImport:
     line:        int    # line number in source
     kind:        str    # 'import' | 'import_from' | 'require' | 'include'
     is_relative: bool   # True for './x', '../x', 'from . import x'
+    module:      str = ''    # parent module for import-from statements
+    imported_name: str = ''  # imported symbol/module for import-from statements
+    level:       int = 0     # Python relative import level, else 0
 
 
 @dataclass
@@ -56,6 +59,6 @@ class BaseExtractor(ABC):
     def extract(self, filepath: Path, root: Path) -> ExtractResult:
         """
         Parse a single file and return all its raw imports.
-        Must NEVER raise — catch all errors and return them in ExtractResult.
+        Must NEVER raise - catch all errors and return them in ExtractResult.
         """
         ...
