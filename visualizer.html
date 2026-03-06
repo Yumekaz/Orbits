@@ -7,7 +7,7 @@
   <title>Orbits. ⬡</title>
   <link rel="icon"
     href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⬡</text></svg>">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+  <script src="node_modules/d3/dist/d3.min.js"></script>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Syne:wght@400;600;700;800&display=swap');
 
@@ -160,7 +160,7 @@
       padding: 0 14px;
       margin-left: auto;
       align-items: center;
-      position: relative
+      position: relative;
     }
 
     .btn {
@@ -216,20 +216,22 @@
       transition: width .35s cubic-bezier(0.4, 0, 0.2, 1)
     }
 
-    #left-rail.collapsed {
-      width: 0;
-      border: none
-    }
-
     #waste-panel,
     #cycles-panel {
       width: 100%;
       flex: 1
     }
 
+    #left-rail.collapsed {
+      width: 0;
+      border: none
+    }
+
     #inspector {
+      width: 300px;
       border-left: 1px solid var(--border);
-      overflow-y: auto
+      overflow-y: auto;
+      transition: width .35s cubic-bezier(0.4, 0, 0.2, 1)
     }
 
     #inspector.collapsed {
@@ -383,7 +385,7 @@
       padding: 4px 7px;
       border-radius: 4px;
       border: 1px solid var(--border);
-      background: rgba(255,255,255,.03);
+      background: rgba(255, 255, 255, .03);
       color: var(--muted);
       cursor: pointer;
       text-transform: uppercase;
@@ -475,38 +477,15 @@
       overflow: hidden
     }
 
-    svg#graph {
+    #graph-canvas {
       width: 100%;
       height: 100%;
+      display: block;
       cursor: grab
     }
 
-    svg#graph:active {
+    #graph-canvas:active {
       cursor: grabbing
-    }
-
-    .link {
-      stroke-width: 1.2;
-      fill: none;
-      transition: stroke-opacity .3s
-    }
-
-    .node circle {
-      cursor: pointer;
-      transition: stroke-width .2s
-    }
-
-    .node text {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 9px;
-      fill: var(--muted);
-      pointer-events: none;
-      user-select: none;
-      font-weight: 500
-    }
-
-    .node.active text {
-      fill: var(--text-hi)
     }
 
     /* ── Overlays ──────────────────────────────────────────── */
@@ -669,10 +648,10 @@
     }
 
 
-    #filter-panel {
+    #filter-panel,
+    #layout-menu {
       position: absolute;
       top: 48px;
-      right: 126px;
       width: 280px;
       background: rgba(7, 9, 18, .96);
       border: 1px solid var(--border);
@@ -683,7 +662,17 @@
       box-shadow: 0 16px 40px rgba(0, 0, 0, .45)
     }
 
-    #filter-panel.open {
+    #filter-panel {
+      right: 126px
+    }
+
+    #layout-menu {
+      right: 232px;
+      width: 220px
+    }
+
+    #filter-panel.open,
+    #layout-menu.open {
       display: block
     }
 
@@ -728,6 +717,30 @@
       display: flex;
       flex-wrap: wrap;
       gap: 8px
+    }
+
+    .menu-block + .menu-block {
+      margin-top: 12px
+    }
+
+    .menu-subtitle {
+      font-size: 9px;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 8px
+    }
+
+    .compact-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px
+    }
+
+    #layout-menu .mini-btn {
+      width: 100%;
+      justify-content: center;
+      text-align: center
     }
 
     .menu-actions {
@@ -969,7 +982,8 @@
         </div>
         <div id="filter-panel">
           <div class="menu-title">Visibility Filter</div>
-          <div class="menu-actions"><button class="mini-btn" id="filter-all">all</button><button class="mini-btn" id="filter-waste">waste</button><button class="mini-btn" id="filter-default">default</button></div>
+          <div class="menu-actions"><button class="mini-btn" id="filter-all">all</button><button class="mini-btn"
+              id="filter-waste">waste</button><button class="mini-btn" id="filter-default">default</button></div>
           <div class="chip-grid" id="filter-chip-grid"></div>
         </div>
       </div>
@@ -978,12 +992,25 @@
         <button class="btn on" id="btn-waste">waste</button>
         <button class="btn on" id="btn-cycles">cycles</button>
         <button class="btn on" id="btn-insp">inspector</button>
-        <button class="btn" id="btn-cluster">cluster</button>
-        <button class="btn on" id="btn-labels">labels</button>
+        <button class="btn" id="btn-cluster">view</button>
         <button class="btn" id="btn-filter">filter</button>
         <button class="btn" id="btn-lang">languages</button>
         <button class="btn" id="btn-search">search</button>
         <button class="btn" id="btn-reset">reset</button>
+        <div id="layout-menu">
+          <div class="menu-title">View Controls</div>
+          <div class="menu-block">
+            <div class="menu-subtitle">Layout</div>
+            <div class="menu-actions"><button class="mini-btn on" id="layout-force">force</button><button class="mini-btn"
+                id="layout-cluster">cluster</button><button class="mini-btn" id="layout-radial">radial</button></div>
+          </div>
+          <div class="menu-block compact-grid">
+            <button class="mini-btn" id="btn-focus">focus off</button>
+            <button class="mini-btn" id="btn-full">full off</button>
+            <button class="mini-btn" id="btn-perf">perf auto</button>
+            <button class="mini-btn on" id="btn-labels">labels</button>
+          </div>
+        </div>
         <div id="lang-menu">
           <div class="menu-title">Language Filter</div>
           <div class="menu-actions"><button class="mini-btn" id="lang-all">all</button><button class="mini-btn"
@@ -996,8 +1023,10 @@
     <div id="main">
       <div id="left-rail">
         <div id="left-tabs">
-          <div class="left-tab active" data-left-panel="waste-panel">dead <span class="badge" id="waste-badge">0</span></div>
-          <div class="left-tab" data-left-panel="cycles-panel">cycles <span class="badge ok" id="cycle-badge">0</span></div>
+          <div class="left-tab active" data-left-panel="waste-panel">dead <span class="badge" id="waste-badge">0</span>
+          </div>
+          <div class="left-tab" data-left-panel="cycles-panel">cycles <span class="badge ok" id="cycle-badge">0</span>
+          </div>
         </div>
         <div id="waste-panel">
           <div class="section-header"><span class="sh-title">Dead Files</span></div>
@@ -1018,7 +1047,12 @@
       </div>
 
       <div id="canvas-wrap">
-        <div id="worker-status"><div id="worker-message">Analyzing...</div><div id="worker-bar"><div></div></div></div>
+        <div id="worker-status">
+          <div id="worker-message">Analyzing...</div>
+          <div id="worker-bar">
+            <div></div>
+          </div>
+        </div>
         <div id="warning-banner">
           <div class="warning-copy" id="warning-copy"></div><button class="warning-dismiss"
             id="warning-dismiss">dismiss</button>
@@ -1038,24 +1072,7 @@
           <button class="btn on" id="btn-open" style="padding:10px 30px">OPEN GRAPH FILE</button>
           <input type="file" id="file-input" accept=".json" style="display:none">
         </div>
-        <svg id="graph">
-          <defs>
-            <marker id="arr" viewBox="0 -4 8 8" refX="15" refY="0" markerWidth="5" markerHeight="5" orient="auto">
-              <path d="M0,-4L8,0L0,4" fill="rgba(31,37,64,0.8)" />
-            </marker>
-            <marker id="arr-hi" viewBox="0 -4 8 8" refX="15" refY="0" markerWidth="5" markerHeight="5" orient="auto">
-              <path d="M0,-4L8,0L0,4" fill="rgba(0,229,255,0.8)" />
-            </marker>
-            <marker id="arr-cycle" viewBox="0 -4 8 8" refX="15" refY="0" markerWidth="5" markerHeight="5" orient="auto">
-              <path d="M0,-4L8,0L0,4" fill="rgba(255,170,0,0.8)" />
-            </marker>
-          </defs>
-          <g id="zoom-layer">
-            <g id="clusters-layer"></g>
-            <g id="links-layer"></g>
-            <g id="nodes-layer"></g>
-          </g>
-        </svg>
+        <canvas id="graph-canvas"></canvas>
         <canvas id="minimap" width="190" height="124"></canvas>
         <div id="health-pill" class="hidden">Project Health <span>—</span>/100 &nbsp; <small id="elapsed"
             style="font-size:9px;opacity:0.5"></small></div>
@@ -1116,406 +1133,7 @@
     </div>
   </div>
 
-  <script>
-
-    let G = null, simN = [], simE = [], sim = null, selId = null, zb = null, zoomState = d3.zoomIdentity;
-    let showLabels = true, activeLangs = null, highlightCycles = false, searchQuery = '', dismissedWarning = false, clusterMode = false;
-    let nodeSel = null, linkSel = null, cycleNodeSet = new Set(), cycleLookup = new Map();
-    let browserWorker = null;
-    let visibleClasses = new Set(['CONNECTED', 'ENTRY', 'LEAF', 'ORPHAN', 'ISLAND', 'TEST', 'GENERATED']);
-
-    const THEME = {
-      CONNECTED: { f: 'rgba(0,229,255,0.1)', s: '#00e5ff' },
-      ENTRY: { f: 'rgba(0,255,136,0.12)', s: '#00ff88' },
-      LEAF: { f: 'rgba(255,170,0,0.1)', s: '#ffaa00' },
-      ORPHAN: { f: 'rgba(255,53,87,0.08)', s: '#ff3557' },
-      ISLAND: { f: 'rgba(176,111,255,0.1)', s: '#b06fff' },
-      TEST: { f: 'rgba(61,74,112,0.1)', s: '#3d4a70' }
-    };
-    const LANG_COLORS = { python: '#3b82f6', javascript: '#f59e0b', typescript: '#06b6d4', tsx: '#22d3ee', go: '#10b981', c: '#fb7185', cpp: '#f97316', java: '#ef4444', kotlin: '#a855f7', generic: '#6b7280' };
-    const PKG_HINTS = { python: ['tree-sitter-python'], javascript: ['tree-sitter-javascript', 'tree-sitter-typescript'], typescript: ['tree-sitter-javascript', 'tree-sitter-typescript'], tsx: ['tree-sitter-javascript', 'tree-sitter-typescript'], go: ['tree-sitter-go'], c: ['tree-sitter-c'], cpp: ['tree-sitter-cpp'], java: ['tree-sitter-java'], kotlin: ['tree-sitter-kotlin'] };
-
-    function normalizeId(id) { return String(id || '').replace(/\\/g, '/'); }
-    function splitPath(id) { return normalizeId(id).split('/'); }
-    function basename(id) { const parts = splitPath(id); return parts[parts.length - 1] || id; }
-    function dirname(id) { const parts = splitPath(id); parts.pop(); return parts.join('/') || '.'; }
-    function escapeHtml(value) { return String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
-    function displayLang(lang) { return ({ javascript: 'JavaScript', typescript: 'TypeScript', tsx: 'TSX', python: 'Python', go: 'Go', c: 'C', cpp: 'C/C++', java: 'Java', kotlin: 'Kotlin', generic: 'Generic' })[lang] || lang; }
-    function getTheme(cls) { return THEME[cls] || THEME.ORPHAN; }
-    function getLangColor(lang) { return LANG_COLORS[(lang || '').toLowerCase()] || '#6b7280'; }
-    function getActiveLanguageSet() { const all = new Set((G?.nodes || []).map(n => n.language).filter(Boolean)); return activeLangs === null ? all : activeLangs; }
-    function nodeVisible(node) {
-      if (!visibleClasses.has(node.classification)) return false;
-      if (!node.language) return true;
-      return getActiveLanguageSet().has(node.language);
-    }
-    function nodeMatchesSearch(node) { if (!searchQuery) return true; const q = searchQuery.toLowerCase(); return basename(node.id).toLowerCase().includes(q) || normalizeId(node.filepath || node.id).toLowerCase().includes(q); }
-    function formatSize(b) { if (!b) return '0 B'; if (b < 1024) return b + ' B'; if (b < 1048576) return (b / 1024).toFixed(1) + ' KB'; return (b / 1048576).toFixed(1) + ' MB'; }
-    function formatDate(ts) {
-      if (!ts) return '—';
-      const d = new Date(ts * 1000);
-      return isNaN(d.getTime()) ? '—' : d.toLocaleString();
-    }
-
-    async function apiPost(route, payload) {
-      const res = await fetch(route, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}) });
-      const data = await res.json();
-      if (!res.ok || data.ok === False || data.ok === false) throw new Error(data.error || `Request failed: ${route}`);
-      return data;
-    }
-
-    async function fetchNodeInfo(id) {
-      const res = await fetch(`/api/node-info?id=${encodeURIComponent(id)}`);
-      const data = await res.json();
-      if (!res.ok || data.ok === false) throw new Error(data.error || 'Node info unavailable');
-      return data;
-    }
-
-    async function openNodeFile(id) {
-      await apiPost('/api/open-file', { id });
-      toast('Opened file');
-    }
-
-    async function deleteNodeFile(id) {
-      if (!confirm(`Delete ${id}?`)) return;
-      const data = await apiPost('/api/delete-file', { id });
-      loadGraph(data.graph);
-      toast('File deleted');
-    }
-
-    async function markIntentional(id, intentional = true) {
-      const data = await apiPost('/api/mark-intentional', { id, intentional });
-      loadGraph(data.graph);
-      toast(intentional ? 'Marked intentional' : 'Removed intentional mark');
-    }
-
-    function buildCycleIndex() {
-      cycleNodeSet = new Set(); cycleLookup = new Map();
-      (G?.cycles || []).forEach((cycle, index) => {
-        const path = cycle.map(normalizeId);
-        path.forEach(id => { cycleNodeSet.add(id); if (!cycleLookup.has(id)) cycleLookup.set(id, []); cycleLookup.get(id).push({ index, path }); });
-      });
-    }
-
-    function updateUnsupportedBanner() {
-      const banner = document.getElementById('warning-banner');
-      const items = G?.meta?.unsupported_languages || [];
-      if (!items.length || dismissedWarning) { banner.classList.remove('show'); return; }
-      const pkgs = new Set(); items.forEach(item => (PKG_HINTS[item.language] || []).forEach(pkg => pkgs.add(pkg)));
-      const msg = items.map(item => `${displayLang(item.language)} parser unavailable - ${item.files} files were not analysed`).join(' • ');
-      document.getElementById('warning-copy').innerHTML = `<strong>Warning</strong> ${msg}. Run: <code>pip install ${[...pkgs].join(' ')}</code>`;
-      banner.classList.add('show');
-    }
-
-    function renderFilterPanel() {
-      const grid = document.getElementById('filter-chip-grid');
-      const classes = ['ENTRY', 'CONNECTED', 'LEAF', 'ORPHAN', 'ISLAND', 'TEST', 'GENERATED'];
-      grid.innerHTML = classes.map(cls => `<button class="toggle-chip ${visibleClasses.has(cls) ? 'on' : ''}" data-cls="${cls}" style="color:${getTheme(cls).s};border-color:${visibleClasses.has(cls) ? getTheme(cls).s : ''}">${cls.toLowerCase()}</button>`).join('');
-      grid.querySelectorAll('[data-cls]').forEach(el => el.addEventListener('click', () => {
-        const cls = el.dataset.cls;
-        if (visibleClasses.has(cls)) visibleClasses.delete(cls); else visibleClasses.add(cls);
-        renderFilterPanel(); renderWaste(); renderCycles(); renderGraph();
-      }));
-      document.getElementById('btn-filter').classList.toggle('on', visibleClasses.size !== 7);
-    }
-
-    function getSearchTreeSet() {
-      if (!searchQuery) return null;
-      const matches = simN.filter(nodeMatchesSearch).map(n => n.id);
-      if (!matches.length) return new Set();
-      const adj = new Map();
-      simE.forEach(edge => {
-        const s = normalizeId(edge.source.id || edge.source), t = normalizeId(edge.target.id || edge.target);
-        if (!adj.has(s)) adj.set(s, new Set());
-        if (!adj.has(t)) adj.set(t, new Set());
-        adj.get(s).add(t);
-        adj.get(t).add(s);
-      });
-      const seen = new Set(matches), queue = [...matches];
-      while (queue.length) {
-        const id = queue.shift();
-        (adj.get(id) || []).forEach(next => { if (!seen.has(next)) { seen.add(next); queue.push(next); } });
-      }
-      return seen;
-    }
-
-    function getClusterTargets(width, height) {
-      const dirs = [...new Set(simN.map(n => dirname(n.id)))].sort();
-      const cols = Math.max(1, Math.ceil(Math.sqrt(dirs.length || 1)));
-      const rows = Math.max(1, Math.ceil(dirs.length / cols));
-      const xGap = width / (cols + 1), yGap = height / (rows + 1);
-      const targets = new Map();
-      dirs.forEach((dir, index) => {
-        const col = index % cols, row = Math.floor(index / cols);
-        targets.set(dir, { x: (col + 1) * xGap, y: (row + 1) * yGap });
-      });
-      return targets;
-    }
-
-    function updateClusterBackplates() {
-      const layer = d3.select('#clusters-layer');
-      if (!clusterMode || !simN.length) { layer.selectAll('*').remove(); return; }
-      const groups = d3.groups(simN, d => dirname(d.id)).map(([dir, nodes]) => {
-        const xs = nodes.map(n => n.x || 0), ys = nodes.map(n => n.y || 0);
-        return { dir, x: d3.min(xs) - 26, y: d3.min(ys) - 34, width: d3.max(xs) - d3.min(xs) + 52, height: d3.max(ys) - d3.min(ys) + 58 };
-      });
-      layer.selectAll('rect.cluster-box').data(groups, d => d.dir).join('rect').attr('class', 'cluster-box').attr('x', d => d.x).attr('y', d => d.y).attr('width', d => d.width).attr('height', d => d.height).attr('rx', 12).attr('ry', 12);
-      layer.selectAll('text.cluster-label').data(groups, d => d.dir).join('text').attr('class', 'cluster-label').attr('x', d => d.x + 14).attr('y', d => d.y + 18).text(d => d.dir === '.' ? 'root' : basename(d.dir));
-    }
-
-    function updateMinimap() {
-      const canvas = document.getElementById('minimap');
-      if (!canvas) return;
-      const ctx = canvas.getContext('2d');
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = 'rgba(7,9,18,.92)';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      if (!simN.length) return;
-      const xs = simN.map(n => n.x || 0), ys = simN.map(n => n.y || 0);
-      const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
-      const pad = 10, graphW = Math.max(1, maxX - minX), graphH = Math.max(1, maxY - minY);
-      const scale = Math.min((canvas.width - pad * 2) / graphW, (canvas.height - pad * 2) / graphH);
-      const mapX = x => pad + (x - minX) * scale, mapY = y => pad + (y - minY) * scale;
-      ctx.strokeStyle = 'rgba(31,37,64,.8)'; ctx.lineWidth = 1;
-      simE.forEach(edge => {
-        const s = edge.source, t = edge.target;
-        const sx = s.x ?? 0, sy = s.y ?? 0, tx = t.x ?? 0, ty = t.y ?? 0;
-        ctx.beginPath(); ctx.moveTo(mapX(sx), mapY(sy)); ctx.lineTo(mapX(tx), mapY(ty)); ctx.stroke();
-      });
-      simN.forEach(node => {
-        ctx.fillStyle = getTheme(node.classification).s;
-        ctx.beginPath(); ctx.arc(mapX(node.x || 0), mapY(node.y || 0), node.classification === 'ENTRY' ? 3 : 2, 0, Math.PI * 2); ctx.fill();
-      });
-      const main = document.getElementById('graph');
-      const vx1 = (-zoomState.x) / zoomState.k, vy1 = (-zoomState.y) / zoomState.k;
-      const vx2 = (main.clientWidth - zoomState.x) / zoomState.k, vy2 = (main.clientHeight - zoomState.y) / zoomState.k;
-      ctx.fillStyle = 'rgba(0,229,255,.08)'; ctx.strokeStyle = 'rgba(0,229,255,.7)';
-      ctx.fillRect(mapX(vx1), mapY(vy1), Math.max(8, (vx2 - vx1) * scale), Math.max(8, (vy2 - vy1) * scale));
-      ctx.strokeRect(mapX(vx1), mapY(vy1), Math.max(8, (vx2 - vx1) * scale), Math.max(8, (vy2 - vy1) * scale));
-    }
-
-    function renderLanguageMenu() {
-      const grid = document.getElementById('lang-chip-grid');
-      if (!G) { grid.innerHTML = ''; updateLangButton(); return; }
-      const langs = [...new Set(G.nodes.map(n => n.language).filter(Boolean))].sort();
-      const counts = {};
-      G.nodes.forEach(n => { if (n.language) counts[n.language] = (counts[n.language] || 0) + 1; });
-      const active = getActiveLanguageSet();
-      grid.innerHTML = langs.map(lang => `<button class="toggle-chip ${active.has(lang) ? 'on' : ''}" data-lang="${escapeHtml(lang)}" style="color:${getLangColor(lang)};border-color:${active.has(lang) ? getLangColor(lang) : ''}">${escapeHtml(displayLang(lang))} <span style="opacity:0.6;font-size:8px">(${counts[lang]})</span></button>`).join('');
-      grid.querySelectorAll('[data-lang]').forEach(el => el.addEventListener('click', () => toggleLanguage(el.dataset.lang)));
-      updateLangButton();
-    }
-
-    function updateLangButton() {
-      const btn = document.getElementById('btn-lang');
-      if (!G) { btn.textContent = 'languages'; btn.classList.remove('on'); return; }
-      const total = new Set(G.nodes.map(n => n.language).filter(Boolean)).size;
-      const active = getActiveLanguageSet().size;
-      btn.textContent = active === total ? 'languages' : `languages ${active}/${total}`;
-      btn.classList.toggle('on', active !== total);
-    }
-
-    function toggleLanguage(lang) {
-      const current = activeLangs === null ? new Set(getActiveLanguageSet()) : new Set(activeLangs);
-      if (current.has(lang)) current.delete(lang); else current.add(lang);
-      const total = new Set(G.nodes.map(n => n.language).filter(Boolean)).size;
-      activeLangs = current.size === total ? null : current;
-      renderLanguageMenu(); renderWaste(); renderGraph();
-    }
-
-
-    function showWorkerStatus(message, percent) {
-      const box = document.getElementById('worker-status');
-      box.classList.add('show');
-      document.getElementById('worker-message').textContent = message;
-      document.querySelector('#worker-bar > div').style.width = `${Math.max(0, Math.min(100, percent || 0))}%`;
-    }
-
-    function hideWorkerStatus() {
-      document.getElementById('worker-status').classList.remove('show');
-    }
-
-    function ensureWorker() {
-      if (browserWorker) return browserWorker;
-      browserWorker = new Worker('/visualizer_worker.js');
-      browserWorker.onmessage = e => {
-        const { type, payload } = e.data || {};
-        if (type === 'progress') showWorkerStatus(payload.message, payload.percent || 0);
-        if (type === 'done') { hideWorkerStatus(); loadGraph(payload); toast('Folder analyzed in browser'); }
-        if (type === 'error') { hideWorkerStatus(); toast(payload.message || 'Browser analysis failed'); }
-      };
-      return browserWorker;
-    }
-
-    async function walkDirectory(handle, prefix, files) {
-      for await (const [name, entry] of handle.entries()) {
-        if (entry.kind === 'directory') {
-          if (['.git', 'node_modules', '.venv', '__pycache__', '.pytest_cache', '.mypy_cache', 'dist', 'build', 'target'].includes(name)) continue;
-          await walkDirectory(entry, prefix ? `${prefix}/${name}` : name, files);
-        } else if (entry.kind === 'file') {
-          const path = prefix ? `${prefix}/${name}` : name;
-          if (/\.(json|py|js|jsx|ts|tsx|go|c|h|cc|cpp|cxx|hpp|hh|java|kt|kts)$/i.test(path)) {
-            const file = await entry.getFile();
-            if (file.size > 2 * 1024 * 1024) continue;
-            files.push({ path, text: await file.text(), size: file.size, mtime: Math.floor(file.lastModified / 1000) });
-          }
-        }
-      }
-    }
-
-    async function openFolder() {
-      if (!window.showDirectoryPicker) {
-        toast('Folder loading requires a Chromium-based browser');
-        return;
-      }
-      const handle = await window.showDirectoryPicker();
-      const files = [];
-      showWorkerStatus('Reading files...', 6);
-      await walkDirectory(handle, '', files);
-      showWorkerStatus(`Analyzing ${files.length} files...`, 10);
-      ensureWorker().postMessage({ type: 'analyzeProject', payload: { files, rootName: handle.name || 'workspace' } });
-    }
-
-    function loadGraph(data) {
-      G = data; selId = null; activeLangs = null; highlightCycles = false; searchQuery = ''; dismissedWarning = false; clusterMode = false; visibleClasses = new Set(['CONNECTED', 'ENTRY', 'LEAF', 'ORPHAN', 'ISLAND', 'TEST', 'GENERATED']); zoomState = d3.zoomIdentity;
-      document.getElementById('drop-overlay').classList.add('hidden'); document.getElementById('search-input').value = ''; document.getElementById('search-box').classList.remove('open');
-      buildCycleIndex(); updateUnsupportedBanner(); renderLanguageMenu(); renderFilterPanel(); updateStats(); renderWaste(); renderCycles(); renderGraph();
-      if (G.summary?.cycle_count > 0) toast(`Alert: ${G.summary.cycle_count} circular dependencies found!`);
-    }
-    window.loadGraph = loadGraph;
-
-    function updateStats() {
-      if (!G) return;
-      const s = G.summary || {}, c = s.counts || {}, imp = G.meta?.import_stats || {};
-      const total = Object.values(imp).reduce((a, b) => a + b, 0), pct = total ? Math.round((imp.local || 0) / total * 100) : 0;
-      document.getElementById('s-files').textContent = G.nodes.length;
-      document.getElementById('s-edges').textContent = G.edges.length;
-      document.getElementById('s-orphans').textContent = (G.waste || []).length;
-      document.getElementById('s-cycles').textContent = s.cycle_count || 0;
-      document.getElementById('s-health').textContent = s.health_score ?? '—';
-      document.getElementById('s-unreachable').textContent = s.unreachable ?? 0;
-      document.getElementById('s-max-depth').textContent = s.max_depth ?? 0;
-      document.getElementById('s-langs').textContent = [...new Set(G.nodes.map(n => n.language).filter(Boolean))].length;
-      const sr = document.getElementById('s-resolved'); sr.textContent = pct + '%'; sr.style.color = pct > 80 ? 'var(--green)' : pct > 50 ? 'var(--amber)' : 'var(--red)';
-      document.getElementById('health-pill').querySelector('span').textContent = s.health_score ?? '—';
-      document.getElementById('health-pill').classList.remove('hidden');
-      document.getElementById('elapsed').textContent = G.meta?.elapsed_s ? `Analysed in ${G.meta.elapsed_s}s` : '';
-    }
-
-    function itemRow(node, color) { const id = escapeHtml(normalizeId(node.id)); return `<div class="list-item" data-id="${id}"><div class="item-dot" style="background:${color}"></div><div class="item-info"><div class="item-name">${escapeHtml(basename(node.id))}</div><div class="item-path">${escapeHtml(dirname(node.id))}</div></div><div class="item-actions"><button class="item-btn" data-open="${id}">open</button><button class="item-btn" data-intentional="${id}">keep</button><button class="item-btn" data-delete="${id}">del</button></div></div>`; }
-    function bindRowClicks(container) { container.querySelectorAll('.list-item').forEach(el => el.addEventListener('click', e => { if (e.target.closest('[data-open],[data-delete],[data-intentional]')) return; focusNode(el.dataset.id); })); container.querySelectorAll('[data-open]').forEach(el => el.addEventListener('click', e => { e.stopPropagation(); openNodeFile(el.dataset.open).catch(err => toast(err.message)); })); container.querySelectorAll('[data-delete]').forEach(el => el.addEventListener('click', e => { e.stopPropagation(); deleteNodeFile(el.dataset.delete).catch(err => toast(err.message)); })); container.querySelectorAll('[data-intentional]').forEach(el => el.addEventListener('click', e => { e.stopPropagation(); markIntentional(el.dataset.intentional, true).catch(err => toast(err.message)); })); }
-
-    function renderWaste() {
-      if (!G) return; const waste = (G.waste || []).filter(nodeVisible), list = document.getElementById('waste-list'), badge = document.getElementById('waste-badge');
-      badge.textContent = waste.length; badge.className = 'badge' + (waste.length === 0 ? ' ok' : '');
-      if (!waste.length) { list.innerHTML = '<div style="padding:40px;text-align:center;color:var(--green);font-size:11px">✓ Clean codebase</div>'; return; }
-      let html = ''; const islands = waste.filter(x => x.classification === 'ISLAND'), orphans = waste.filter(x => x.classification === 'ORPHAN');
-      if (islands.length) { const groups = {}; islands.forEach(x => { const k = x.island_id >= 0 ? x.island_id : 'x'; (groups[k] = groups[k] || []).push(x); }); Object.entries(groups).forEach(([id, grp]) => { html += `<div class="list-label">Isolated Cluster ${parseInt(id, 10) + 1}</div>`; grp.forEach(x => html += itemRow(x, 'var(--purple)')); }); }
-      if (orphans.length) { html += '<div class="list-label">Orphan Files</div>'; orphans.forEach(x => html += itemRow(x, 'var(--red)')); }
-      list.innerHTML = html; bindRowClicks(list);
-    }
-
-    function renderCycles() {
-      if (!G) return; const cycles = (G.cycles || []).filter(cycle => cycle.every(id => { const node = G.nodes.find(n => normalizeId(n.id) === normalizeId(id)); return node ? nodeVisible(node) : false; })), badge = document.getElementById('cycle-badge'), list = document.getElementById('cycle-list');
-      badge.textContent = cycles.length; badge.className = 'badge' + (cycles.length === 0 ? ' ok' : ''); document.getElementById('btn-cycle-highlight').classList.toggle('on', highlightCycles);
-      if (!cycles.length) { list.innerHTML = '<div style="padding:40px;text-align:center;color:var(--green);font-size:11px">✓ No cycles detected</div>'; return; }
-      list.innerHTML = cycles.map((cycle, index) => `<div class="cycle-item"><div class="cycle-title">Cycle ${index + 1}</div><div class="cycle-path">${cycle.map((id, idx) => `${idx ? '<span class="cycle-arrow">→</span>' : ''}<button class="cycle-node" data-focus="${escapeHtml(normalizeId(id))}">${escapeHtml(basename(id))}</button>`).join('')}</div></div>`).join('');
-      list.querySelectorAll('[data-focus]').forEach(el => el.addEventListener('click', () => focusNode(el.dataset.focus)));
-    }
-
-    function renderGraph() {
-      if (!G) return; const svg = d3.select('#graph'); const width = svg.node().clientWidth || 1000, height = svg.node().clientHeight || 800;
-      d3.select('#clusters-layer').selectAll('*').remove(); d3.select('#links-layer').selectAll('*').remove(); d3.select('#nodes-layer').selectAll('*').remove();
-      const visN = G.nodes.filter(nodeVisible), visIds = new Set(visN.map(n => normalizeId(n.id))), visE = G.edges.filter(e => visIds.has(normalizeId(e.source)) && visIds.has(normalizeId(e.target)));
-      simN = visN.map(n => ({ ...n, id: normalizeId(n.id), filepath: normalizeId(n.filepath || n.id) })); simE = visE.map(e => ({ ...e, source: normalizeId(e.source), target: normalizeId(e.target), line: e.line }));
-      if (sim) sim.stop();
-      sim = d3.forceSimulation(simN).force('link', d3.forceLink(simE).id(d => d.id).distance(clusterMode ? 74 : 100).strength(clusterMode ? .42 : .3)).force('charge', d3.forceManyBody().strength(clusterMode ? -220 : -300).distanceMax(600)).force('center', d3.forceCenter(width / 2, height / 2)).force('collide', d3.forceCollide(clusterMode ? 22 : 24)).alphaDecay(.02);
-      if (clusterMode) { const targets = getClusterTargets(width, height); sim.force('x', d3.forceX(d => targets.get(dirname(d.id)).x).strength(.18)); sim.force('y', d3.forceY(d => targets.get(dirname(d.id)).y).strength(.18)); }
-      linkSel = d3.select('#links-layer').selectAll('line').data(simE).join('line').attr('class', 'link');
-      nodeSel = d3.select('#nodes-layer').selectAll('g.node').data(simN, d => d.id).join('g').attr('class', 'node').call(d3.drag().on('start', (ev, d) => { if (!ev.active) sim.alphaTarget(.3).restart(); d.fx = d.x; d.fy = d.y; }).on('drag', (ev, d) => { d.fx = ev.x; d.fy = ev.y; }).on('end', (ev, d) => { if (!ev.active) sim.alphaTarget(0); d.fx = null; d.fy = null; })).on('click', (ev, d) => { ev.stopPropagation(); selectNode(d.id); });
-      nodeSel.append('circle').attr('r', d => d.classification === 'ENTRY' ? 10 : 7).attr('fill', d => getTheme(d.classification).f);
-      nodeSel.append('circle').attr('r', d => d.classification === 'ENTRY' ? 12 : 9).attr('fill', 'none').attr('stroke', d => getLangColor(d.language)).attr('stroke-width', .8).attr('stroke-opacity', .6);
-      nodeSel.append('text').attr('dy', '-14').attr('text-anchor', 'middle').text(d => d.name).style('display', showLabels ? null : 'none');
-      sim.on('tick', () => { linkSel.attr('x1', d => d.source.x).attr('y1', d => d.source.y).attr('x2', d => d.target.x).attr('y2', d => d.target.y); nodeSel.attr('transform', d => `translate(${d.x},${d.y})`); updateClusterBackplates(); updateMinimap(); });
-      zb = d3.zoom().scaleExtent([.1, 8]).on('zoom', e => { zoomState = e.transform; d3.select('#zoom-layer').attr('transform', e.transform); updateMinimap(); }); svg.call(zb); svg.on('click', e => { if (e.target === svg.node()) clearSel(); });
-      applyGraphState(); updateClusterBackplates(); updateMinimap();
-    }
-
-    function applyGraphState() {
-      if (!nodeSel || !linkSel) return; const matches = new Set(simN.filter(nodeMatchesSearch).map(n => n.id)); const treeSet = getSearchTreeSet(); const selected = normalizeId(selId || ''), hasQuery = !!searchQuery;
-      document.getElementById('search-status').textContent = hasQuery ? (matches.size ? `${matches.size} match${matches.size !== 1 ? 'es' : ''} • dependency tree highlighted` : 'No matches') : '';
-      linkSel.attr('stroke', e => { const s = normalizeId(e.source.id || e.source), t = normalizeId(e.target.id || e.target); if (selected && (s === selected || t === selected)) return 'var(--cyan)'; if (highlightCycles && cycleNodeSet.has(s) && cycleNodeSet.has(t)) return 'var(--amber)'; if (hasQuery && treeSet && treeSet.has(s) && treeSet.has(t)) return 'rgba(0,229,255,0.5)'; return 'rgba(31,37,64,0.7)'; }).attr('stroke-opacity', e => { const s = normalizeId(e.source.id || e.source), t = normalizeId(e.target.id || e.target); if (selected) return (s === selected || t === selected) ? 1 : .08; if (hasQuery) return treeSet && treeSet.has(s) && treeSet.has(t) ? .45 : .05; if (highlightCycles && cycleNodeSet.has(s) && cycleNodeSet.has(t)) return .95; return 1; }).attr('marker-end', e => { const s = normalizeId(e.source.id || e.source), t = normalizeId(e.target.id || e.target); if (selected && (s === selected || t === selected)) return 'url(#arr-hi)'; if (highlightCycles && cycleNodeSet.has(s) && cycleNodeSet.has(t)) return 'url(#arr-cycle)'; return 'url(#arr)'; });
-      nodeSel.classed('active', d => d.id === selected);
-      nodeSel.select('circle').attr('stroke', d => cycleNodeSet.has(d.id) ? 'var(--amber)' : getTheme(d.classification).s).attr('stroke-width', d => d.id === selected ? 3 : highlightCycles && cycleNodeSet.has(d.id) ? 3 : cycleNodeSet.has(d.id) ? 2.5 : 1.5).attr('opacity', d => hasQuery ? (treeSet && treeSet.has(d.id) ? 1 : .1) : 1);
-      nodeSel.select('text').style('display', showLabels ? null : 'none').style('opacity', d => hasQuery ? (treeSet && treeSet.has(d.id) ? 1 : .1) : 1);
-      document.querySelectorAll('.list-item').forEach(el => el.classList.toggle('active', normalizeId(el.dataset.id) === selected));
-    }
-
-    function renderChips(el, edges, dir) {
-      if (!edges.length) { el.innerHTML = '<div style="color:var(--dim);font-size:10px">None</div>'; return; }
-      el.innerHTML = '<div class="chip-cont">' + edges.map(e => { const id = dir === 'in' ? normalizeId(e.source.id || e.source) : normalizeId(e.target.id || e.target); const line = e.line ? `:${e.line}` : ''; return `<div class="chip ${dir}" data-focus="${escapeHtml(id)}" title="${escapeHtml(id + line)}">${escapeHtml(basename(id))}${line}</div>`; }).join('') + '</div>';
-      el.querySelectorAll('[data-focus]').forEach(chip => chip.addEventListener('click', () => focusNode(chip.dataset.focus)));
-    }
-
-    function selectNode(id) {
-      selId = normalizeId(id); const node = G.nodes.find(n => normalizeId(n.id) === selId); if (!node) return;
-      const inE = G.edges.filter(e => normalizeId(e.target.id || e.target) === selId), outE = G.edges.filter(e => normalizeId(e.source.id || e.source) === selId);
-      document.getElementById('ip').style.display = 'none'; document.getElementById('ic').style.display = 'block'; document.getElementById('iname').textContent = normalizeId(node.filepath || node.id);
-      const island = node.island_id >= 0 ? `<span class="v purple">Cluster ${node.island_id + 1}</span>` : '<span class="v">—</span>';
-      document.getElementById('imeta').innerHTML = `<div class="kv-row"><span class="k">Class</span><span class="v" style="color:${node.classification === 'ENTRY' ? 'var(--green)' : node.classification === 'ORPHAN' ? 'var(--red)' : node.classification === 'ISLAND' ? 'var(--purple)' : 'var(--cyan)'}">${escapeHtml(node.classification)}</span></div><div class="kv-row"><span class="k">Size</span><span class="v">${formatSize(node.size)}</span></div><div class="kv-row"><span class="k">Inbound</span><span class="v">${inE.length}</span></div><div class="kv-row"><span class="k">Outbound</span><span class="v">${outE.length}</span></div><div class="kv-row"><span class="k">Language</span><span class="v" style="color:${getLangColor(node.language)}">${escapeHtml(node.language || '—')}</span></div><div class="kv-row"><span class="k">Depth</span><span class="v">${node.depth >= 0 ? node.depth : '∞'}</span></div><div class="kv-row"><span class="k">Island</span>${island}</div><div class="kv-row"><span class="k">Modified</span><span class="v">${formatDate(node.mtime)}</span></div>`;
-      document.getElementById('ihistory').innerHTML = '<div style="color:var(--dim);font-size:10px">Loading git history…</div>';
-      fetchNodeInfo(selId).then(info => { document.getElementById('ihistory').innerHTML = `<div class="kv-row"><span class="k">Modified</span><span class="v">${escapeHtml(info.mtime_iso ? new Date(info.mtime_iso).toLocaleString() : formatDate(node.mtime))}</span></div><div style="margin-top:8px;font-size:10px;line-height:1.6;color:var(--text)"><span style="color:var(--muted);text-transform:uppercase;letter-spacing:.12em">Blame</span><br>${escapeHtml(info.blame?.summary || 'Unavailable')}</div>`; }).catch(err => { document.getElementById('ihistory').innerHTML = `<div style="color:var(--dim);font-size:10px">${escapeHtml(err.message)}</div>`; });
-      const cycles = cycleLookup.get(selId) || [];
-      document.getElementById('icycle').innerHTML = cycles.length ? cycles.map(entry => `<div class="chip-cont"><div style="font-size:9px;color:var(--amber);letter-spacing:.12em;text-transform:uppercase">Cycle ${entry.index + 1}</div><div class="cycle-path">${entry.path.map((pid, idx) => `${idx ? '<span class="cycle-arrow">→</span>' : ''}<span class="chip cycle" data-focus="${escapeHtml(pid)}">${escapeHtml(basename(pid))}</span>`).join('')}</div></div>`).join('') : '<div style="color:var(--dim);font-size:10px">This node is not part of a cycle.</div>';
-      document.getElementById('icycle').querySelectorAll('[data-focus]').forEach(chip => chip.addEventListener('click', () => focusNode(chip.dataset.focus)));
-      renderChips(document.getElementById('iout'), outE, 'out'); renderChips(document.getElementById('iin'), inE, 'in'); applyGraphState();
-    }
-
-    function clearSel() { selId = null; document.getElementById('ip').style.display = 'block'; document.getElementById('ic').style.display = 'none'; document.getElementById('ihistory').innerHTML = '<div style="color:var(--dim);font-size:10px">No node selected</div>'; document.getElementById('icycle').innerHTML = '<div style="color:var(--dim);font-size:10px">No cycle selected</div>'; applyGraphState(); }
-    function focusNode(id) { const nid = normalizeId(id), sn = simN.find(n => n.id === nid); if (sn && zb) { const svg = d3.select('#graph'), W = svg.node().clientWidth, H = svg.node().clientHeight; svg.transition().duration(600).call(zb.transform, d3.zoomIdentity.translate(W / 2, H / 2).scale(1.8).translate(-sn.x, -sn.y)); } selectNode(nid); }
-    function focusFirstSearchMatch() { const first = simN.find(nodeMatchesSearch); if (first) focusNode(first.id); }
-    function toggleSearch(open = true) { document.getElementById('search-box').classList.toggle('open', open); if (open) { const input = document.getElementById('search-input'); input.focus(); input.select(); } }
-    function clearSearch(hide = false) { searchQuery = ''; document.getElementById('search-input').value = ''; if (hide) document.getElementById('search-box').classList.remove('open'); applyGraphState(); }
-
-    let _tt; function toast(m) { const el = document.getElementById('toast'); el.textContent = m; el.classList.add('show'); clearTimeout(_tt); _tt = setTimeout(() => el.classList.remove('show'), 3000); }
-
-    document.getElementById('btn-folder').onclick = () => openFolder().catch(err => toast(err.message || String(err)));
-    function setLeftPanel(panelId) {
-      document.querySelectorAll('.left-tab').forEach(tab => tab.classList.toggle('active', tab.dataset.leftPanel === panelId));
-      document.getElementById('waste-panel').classList.toggle('left-panel-hidden', panelId !== 'waste-panel');
-      document.getElementById('cycles-panel').classList.toggle('left-panel-hidden', panelId !== 'cycles-panel');
-    }
-
-    document.getElementById('btn-waste').onclick = function () { document.getElementById('left-rail').classList.toggle('collapsed'); this.classList.toggle('on'); setTimeout(() => renderGraph(), 350); };
-    document.getElementById('btn-cycles').onclick = function () { document.getElementById('left-rail').classList.remove('collapsed'); document.getElementById('btn-waste').classList.add('on'); setLeftPanel('cycles-panel'); setTimeout(() => renderGraph(), 350); };
-    document.querySelectorAll('.left-tab').forEach(tab => tab.addEventListener('click', () => setLeftPanel(tab.dataset.leftPanel)));
-    document.getElementById('btn-insp').onclick = function () { document.getElementById('inspector').classList.toggle('collapsed'); this.classList.toggle('on'); setTimeout(() => renderGraph(), 350); };
-    document.getElementById('btn-cluster').onclick = function () { clusterMode = !clusterMode; this.classList.toggle('on', clusterMode); renderGraph(); };
-    document.getElementById('btn-labels').onclick = function () { showLabels = !showLabels; this.classList.toggle('on'); applyGraphState(); };
-    document.getElementById('btn-filter').onclick = function () { document.getElementById('filter-panel').classList.toggle('open'); };
-    document.getElementById('btn-lang').onclick = function () { if (G) document.getElementById('lang-menu').classList.toggle('open'); };
-    document.getElementById('lang-all').onclick = () => { activeLangs = null; renderLanguageMenu(); renderWaste(); renderCycles(); renderGraph(); };
-    document.getElementById('lang-none').onclick = () => { activeLangs = new Set(); renderLanguageMenu(); renderWaste(); renderCycles(); renderGraph(); };
-    document.getElementById('filter-all').onclick = () => { visibleClasses = new Set(['CONNECTED', 'ENTRY', 'LEAF', 'ORPHAN', 'ISLAND', 'TEST', 'GENERATED']); renderFilterPanel(); renderWaste(); renderCycles(); renderGraph(); };
-    document.getElementById('filter-waste').onclick = () => { visibleClasses = new Set(['ORPHAN', 'ISLAND']); renderFilterPanel(); renderWaste(); renderCycles(); renderGraph(); };
-    document.getElementById('filter-default').onclick = () => { visibleClasses = new Set(['CONNECTED', 'ENTRY', 'LEAF', 'ORPHAN', 'ISLAND', 'TEST', 'GENERATED']); renderFilterPanel(); renderWaste(); renderCycles(); renderGraph(); };
-    document.getElementById('btn-search').onclick = () => toggleSearch(true);
-    document.getElementById('btn-reset').onclick = () => { if (zb) d3.select('#graph').transition().duration(500).call(zb.transform, d3.zoomIdentity); };
-    document.getElementById('btn-cycle-highlight').onclick = () => { highlightCycles = !highlightCycles; renderCycles(); applyGraphState(); };
-    document.getElementById('warning-dismiss').onclick = () => { dismissedWarning = true; updateUnsupportedBanner(); };
-    document.getElementById('search-input').oninput = e => { searchQuery = e.target.value.trim(); applyGraphState(); };
-    document.getElementById('search-input').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); focusFirstSearchMatch(); } if (e.key === 'Escape') { e.preventDefault(); clearSearch(true); } };
-    document.addEventListener('click', e => { if (!e.target.closest('#lang-menu') && !e.target.closest('#btn-lang')) document.getElementById('lang-menu').classList.remove('open'); if (!e.target.closest('#filter-panel') && !e.target.closest('#btn-filter')) document.getElementById('filter-panel').classList.remove('open'); });
-    document.addEventListener('keydown', e => { const tag = document.activeElement?.tagName; const editing = ['INPUT', 'TEXTAREA'].includes(tag) || document.activeElement?.isContentEditable; if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); toggleSearch(true); return; } if (!editing && e.key === '/') { e.preventDefault(); toggleSearch(true); return; } if (e.key === 'Escape' && document.getElementById('search-box').classList.contains('open')) { e.preventDefault(); clearSearch(true); } });
-
-    function loadFile(file) { if (!file || !file.name.endsWith('.json')) return toast('Please select a valid graph.json'); const r = new FileReader(); r.onload = e => { try { loadGraph(JSON.parse(e.target.result)); toast('Graph loaded successfully'); } catch { toast('Error parsing JSON'); } }; r.readAsText(file); }
-    document.getElementById('btn-open').onclick = () => document.getElementById('file-input').click();
-    document.getElementById('file-input').onchange = e => loadFile(e.target.files[0]);
-    document.addEventListener('dragover', e => e.preventDefault()); document.addEventListener('drop', e => { e.preventDefault(); loadFile(e.dataTransfer.files[0]); });
-    if (location.protocol !== 'file:') fetch('graph.json').then(r => r.ok ? r.json() : null).then(d => { if (d) loadGraph(d); }).catch(() => { });
-    window.onresize = () => renderGraph();
-
-  </script>
+  <script src="visualizer_app.js"></script>
 </body>
 
 </html>

@@ -1,2 +1,0 @@
-extractors\__init__.py
-resolvers\__init__.py

@@ -1,722 +1,1383 @@
-const DEFAULT_CLASSES = ['CONNECTED', 'ENTRY', 'LEAF', 'ORPHAN', 'ISLAND', 'TEST', 'GENERATED'];
-const THEME = {
-  CONNECTED: { fill: '#00e5ff', bg: 'rgba(0,229,255,.14)' },
-  ENTRY: { fill: '#00ff88', bg: 'rgba(0,255,136,.16)' },
-  LEAF: { fill: '#ffaa00', bg: 'rgba(255,170,0,.16)' },
-  ORPHAN: { fill: '#ff3557', bg: 'rgba(255,53,87,.16)' },
-  ISLAND: { fill: '#b06fff', bg: 'rgba(176,111,255,.16)' },
-  TEST: { fill: '#6e7ea8', bg: 'rgba(110,126,168,.16)' },
-  GENERATED: { fill: '#223058', bg: 'rgba(34,48,88,.3)' },
-  CLUSTER: { fill: '#b06fff', bg: 'rgba(176,111,255,.05)' },
-};
-const LANG_COLORS = {
-  python: '#3b82f6', javascript: '#f59e0b', typescript: '#06b6d4', tsx: '#22d3ee', go: '#10b981', c: '#fb7185', cpp: '#f97316', java: '#ef4444', kotlin: '#a855f7', generic: '#64748b'
-};
-const PKG_HINTS = {
-  javascript: ['tree-sitter-javascript', 'tree-sitter-typescript'], typescript: ['tree-sitter-javascript', 'tree-sitter-typescript'], tsx: ['tree-sitter-javascript', 'tree-sitter-typescript'], go: ['tree-sitter-go'], c: ['tree-sitter-c'], cpp: ['tree-sitter-cpp'], java: ['tree-sitter-java'], kotlin: ['tree-sitter-kotlin'], python: ['tree-sitter-python']
-};
+(() => {
+  const DEFAULT_CLASSES = ['CONNECTED', 'ENTRY', 'LEAF', 'ORPHAN', 'ISLAND', 'TEST', 'GENERATED'];
+  const THEME = {
+    CONNECTED: { fill: 'rgba(0,229,255,.12)', stroke: '#00e5ff' },
+    ENTRY: { fill: 'rgba(0,255,136,.16)', stroke: '#00ff88' },
+    LEAF: { fill: 'rgba(255,170,0,.12)', stroke: '#ffaa00' },
+    ORPHAN: { fill: 'rgba(255,53,87,.12)', stroke: '#ff3557' },
+    ISLAND: { fill: 'rgba(176,111,255,.12)', stroke: '#b06fff' },
+    TEST: { fill: 'rgba(109,133,193,.11)', stroke: '#6d85c1' },
+    GENERATED: { fill: 'rgba(59,74,112,.1)', stroke: '#3d4a70' }
+  };
+  const LANG_COLORS = { python: '#3b82f6', javascript: '#f59e0b', typescript: '#06b6d4', tsx: '#22d3ee', go: '#10b981', c: '#fb7185', cpp: '#f97316', java: '#ef4444', kotlin: '#a855f7', generic: '#6b7280' };
+  const PKG_HINTS = { python: ['tree-sitter-python'], javascript: ['tree-sitter-javascript', 'tree-sitter-typescript'], typescript: ['tree-sitter-javascript', 'tree-sitter-typescript'], tsx: ['tree-sitter-javascript', 'tree-sitter-typescript'], go: ['tree-sitter-go'], c: ['tree-sitter-c'], cpp: ['tree-sitter-cpp'], java: ['tree-sitter-java'], kotlin: ['tree-sitter-kotlin'] };
+  const PERF = {
+    largeGraphNodes: 420,
+    hugeGraphNodes: 850,
+    largeGraphEdges: 1400,
+    hugeGraphEdges: 3200,
+    maxRenderNodesZoomedOut: 220,
+    maxRenderNodesMidZoom: 360,
+    maxRenderNodesZoomedIn: 520,
+    maxRenderEdgesDense: 900,
+    maxRenderEdgesNormal: 1500,
+    maxMinimapEdges: 700,
+    maxMinimapNodes: 420,
+    simRenderIntervalMs: 33
+  };
+  const ELS = {};
+  const APP = {
+    graph: null,
+    indexes: null,
+    layoutPositions: new Map(),
+    renderModel: null,
+    worker: null,
+    workerRequestId: 0,
+    pendingRender: 0,
+    debounceSearch: 0,
+    canvas: null,
+    ctx: null,
+    zoomBehavior: null,
+    dpr: Math.max(1, window.devicePixelRatio || 1),
+    draggingNodeId: null,
+    dragMoved: false,
+    dragInfluence: null,
+    dragDelta: { x: 0, y: 0 },
+    dragReleaseFrame: 0,
+    anchorPositions: new Map(),
+    dragOriginPositions: null,
+    simulation: null,
+    simNodeById: new Map(),
+    motionEnabled: true,
+    lastSimRenderAt: 0,
+    state: createDefaultState()
+  };
 
-let G = null;
-let cy = null;
-let activeLangs = null;
-let visibleClasses = new Set(DEFAULT_CLASSES);
-let showLabels = true;
-let clusterMode = false;
-let highlightCycles = false;
-let searchQuery = '';
-let selectedId = null;
-let dismissedWarning = false;
-let cycleLookup = new Map();
-let cycleNodeSet = new Set();
-let worker = null;
-
-function normalizeId(id) { return String(id || '').replace(/\\/g, '/'); }
-function basename(path) { const bits = normalizeId(path).split('/'); return bits[bits.length - 1] || path; }
-function dirname(path) { const bits = normalizeId(path).split('/'); bits.pop(); return bits.length ? bits.join('/') : '.'; }
-function esc(value) { return String(value).replace(/[&<>"']/g, (m) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m])); }
-function getTheme(cls) { return THEME[cls] || THEME.ORPHAN; }
-function getLangColor(lang) { return LANG_COLORS[(lang || '').toLowerCase()] || '#94a3b8'; }
-function displayLang(lang) { return ({ javascript:'JavaScript', typescript:'TypeScript', tsx:'TSX', python:'Python', go:'Go', c:'C', cpp:'C++', java:'Java', kotlin:'Kotlin', generic:'Generic' })[lang] || lang; }
-function getNodeById(id) { return (G?.nodes || []).find((node) => normalizeId(node.id) === normalizeId(id)); }
-function formatSize(bytes) { if (!bytes) return '0 B'; if (bytes < 1024) return `${bytes} B`; if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`; return `${(bytes / 1048576).toFixed(1)} MB`; }
-function activeLanguageSet() { const langs = new Set((G?.nodes || []).map((node) => node.language).filter(Boolean)); return activeLangs === null ? langs : activeLangs; }
-function nodeVisible(node) { return visibleClasses.has(node.classification) && (!node.language || activeLanguageSet().has(node.language)); }
-function nodeMatchesSearch(node) { if (!searchQuery) return true; const q = searchQuery.toLowerCase(); return basename(node.id).toLowerCase().includes(q) || normalizeId(node.filepath || node.id).toLowerCase().includes(q); }
-
-function buildCycleIndex() {
-  cycleLookup = new Map();
-  cycleNodeSet = new Set();
-  (G?.cycles || []).forEach((cycle, index) => {
-    const normalized = cycle.map(normalizeId);
-    normalized.forEach((id) => {
-      cycleNodeSet.add(id);
-      if (!cycleLookup.has(id)) cycleLookup.set(id, []);
-      cycleLookup.get(id).push({ index, path: normalized });
-    });
-  });
-}
-
-function updateStats() {
-  if (!G) return;
-  const summary = G.summary || {};
-  const counts = summary.counts || {};
-  const importStats = G.meta?.import_stats || {};
-  const totalImports = Object.values(importStats).reduce((sum, value) => sum + value, 0);
-  const pct = totalImports ? Math.round(((importStats.local || 0) / totalImports) * 100) : 0;
-  document.getElementById('s-files').textContent = G.nodes.length;
-  document.getElementById('s-edges').textContent = G.edges.length;
-  document.getElementById('s-dead').textContent = (counts.ORPHAN || 0) + (counts.ISLAND || 0);
-  document.getElementById('s-cycles').textContent = summary.cycle_count || 0;
-  document.getElementById('s-health').textContent = summary.health_score ?? 0;
-  document.getElementById('s-unreachable').textContent = summary.unreachable ?? 0;
-  document.getElementById('s-max-depth').textContent = summary.max_depth ?? 0;
-  document.getElementById('s-langs').textContent = [...new Set(G.nodes.map((node) => node.language).filter(Boolean))].length;
-  const resolved = document.getElementById('s-resolved');
-  resolved.textContent = `${pct}%`;
-  resolved.className = 'tv ' + (pct >= 80 ? 'gv' : pct >= 50 ? 'yv' : 'ov');
-  document.getElementById('hp-value').textContent = summary.health_score ?? '—';
-  document.getElementById('elapsed').textContent = G.meta?.elapsed_s ? `${G.meta.elapsed_s}s` : '';
-}
-
-function renderLanguageMenu() {
-  const grid = document.getElementById('lang-chip-grid');
-  if (!G) { grid.innerHTML = ''; return; }
-  const counts = {};
-  G.nodes.forEach((node) => { if (node.language) counts[node.language] = (counts[node.language] || 0) + 1; });
-  const active = activeLanguageSet();
-  const languages = Object.keys(counts).sort();
-  grid.innerHTML = languages.map((lang) => `<button class="toggle-chip ${active.has(lang) ? 'on' : ''}" data-lang="${esc(lang)}" style="color:${getLangColor(lang)};border-color:${active.has(lang) ? getLangColor(lang) : 'var(--border)'}">${esc(displayLang(lang))} <span class="count">(${counts[lang]})</span></button>`).join('');
-  grid.querySelectorAll('[data-lang]').forEach((button) => button.addEventListener('click', () => toggleLanguage(button.dataset.lang)));
-  const total = languages.length;
-  document.getElementById('btn-lang').classList.toggle('on', activeLangs !== null && active.size !== total);
-}
-
-function toggleLanguage(lang) {
-  const current = activeLangs === null ? new Set(activeLanguageSet()) : new Set(activeLangs);
-  if (current.has(lang)) current.delete(lang); else current.add(lang);
-  const total = new Set(G.nodes.map((node) => node.language).filter(Boolean)).size;
-  activeLangs = current.size === total ? null : current;
-  rerender();
-}
-
-function renderFilterPanel() {
-  const grid = document.getElementById('filter-chip-grid');
-  grid.innerHTML = DEFAULT_CLASSES.map((cls) => `<button class="toggle-chip ${visibleClasses.has(cls) ? 'on' : ''}" data-cls="${cls}" style="color:${getTheme(cls).fill};border-color:${visibleClasses.has(cls) ? getTheme(cls).fill : 'var(--border)'}">${cls.toLowerCase()}</button>`).join('');
-  grid.querySelectorAll('[data-cls]').forEach((button) => button.addEventListener('click', () => {
-    const cls = button.dataset.cls;
-    if (visibleClasses.has(cls)) visibleClasses.delete(cls); else visibleClasses.add(cls);
-    rerender();
-  }));
-  document.getElementById('btn-filter').classList.toggle('on', visibleClasses.size !== DEFAULT_CLASSES.length);
-}
-
-function renderListItem(item, color) {
-  return `<div class="list-item" data-focus="${esc(normalizeId(item.id))}"><div class="item-dot" style="background:${color}"></div><div><div class="item-name">${esc(basename(item.id))}</div><div class="item-path">${esc(dirname(item.id))}</div></div></div>`;
-}
-
-function bindFocusButtons(root) {
-  root.querySelectorAll('[data-focus]').forEach((element) => element.addEventListener('click', () => focusNode(element.dataset.focus)));
-}
-
-function renderWaste() {
-  const body = document.getElementById('waste-panel');
-  if (!G) { body.innerHTML = ''; return; }
-  const items = (G.waste || []).filter((item) => {
-    const node = getNodeById(item.id);
-    return node ? nodeVisible(node) : true;
-  });
-  const badge = document.getElementById('waste-badge');
-  badge.textContent = items.length;
-  badge.className = `badge${items.length === 0 ? ' ok' : ''}`;
-  if (!items.length) {
-    body.innerHTML = '<div class="list-label">No dead files</div>';
-    return;
+  function createDefaultState() {
+    return {
+      selectedId: null,
+      hoveredId: null,
+      visibleClasses: new Set(DEFAULT_CLASSES),
+      activeLangs: null,
+      searchQuery: '',
+      leftPanel: 'waste-panel',
+      layoutMode: 'force',
+      focusRadius: 0,
+      highlightCycles: false,
+      zoom: d3.zoomIdentity,
+      showLabels: true,
+      showFullGraph: false,
+      dismissedWarning: false,
+      perfMode: 'auto'
+    };
   }
-  const islands = items.filter((item) => item.classification === 'ISLAND');
-  const orphans = items.filter((item) => item.classification === 'ORPHAN');
-  const parts = [];
-  if (islands.length) {
-    const grouped = new Map();
-    islands.forEach((item) => { const key = item.island_id ?? -1; if (!grouped.has(key)) grouped.set(key, []); grouped.get(key).push(item); });
-    [...grouped.entries()].forEach(([id, group]) => {
-      parts.push(`<div class="list-label">Isolated Cluster ${Number(id) + 1}</div>`);
-      group.forEach((item) => parts.push(renderListItem(item, 'var(--purple)')));
-    });
+
+  function graphMetrics() {
+    return { nodes: APP.graph?.nodes?.length || 0, edges: APP.graph?.edges?.length || 0 };
   }
-  if (orphans.length) {
-    parts.push('<div class="list-label">Orphan Files</div>');
-    orphans.forEach((item) => parts.push(renderListItem(item, 'var(--red)')));
-  }
-  body.innerHTML = parts.join('');
-  bindFocusButtons(body);
-}
 
-function renderCycles() {
-  const body = document.getElementById('cycles-panel');
-  if (!G) { body.innerHTML = ''; return; }
-  const cycles = (G.cycles || []).filter((cycle) => cycle.every((id) => {
-    const node = getNodeById(id);
-    return node ? nodeVisible(node) : false;
-  }));
-  const badge = document.getElementById('cycle-badge');
-  badge.textContent = cycles.length;
-  badge.className = `badge${cycles.length === 0 ? ' ok' : ''}`;
-  if (!cycles.length) {
-    body.innerHTML = '<div class="list-label">No cycles detected</div>';
-    return;
-  }
-  body.innerHTML = '<div class="sect-title"><button class="mini-btn ' + (highlightCycles ? 'on' : '') + '" id="btn-cycle-highlight">highlight all</button></div>' + cycles.map((cycle, index) => `<div class="cycle-item"><div><div class="cycle-title">Cycle ${index + 1}</div><div class="cycle-path">${cycle.map((id, idx) => `${idx ? '<span class="cycle-arrow">→</span>' : ''}<button class="cycle-node" data-focus="${esc(normalizeId(id))}">${esc(basename(id))}</button>`).join('')}</div></div></div>`).join('');
-  bindFocusButtons(body);
-  const toggle = document.getElementById('btn-cycle-highlight');
-  if (toggle) toggle.onclick = () => { highlightCycles = !highlightCycles; applySearchAndSelectionState(); renderCycles(); };
-}
-
-function updateWarningBanner() {
-  const items = G?.meta?.unsupported_languages || [];
-  const banner = document.getElementById('warning-banner');
-  if (!items.length || dismissedWarning) { banner.classList.remove('show'); return; }
-  const pkgs = new Set();
-  items.forEach((item) => (PKG_HINTS[item.language] || []).forEach((pkg) => pkgs.add(pkg)));
-  const text = items.map((item) => `${displayLang(item.language)} parser unavailable - ${item.files} files were not analysed`).join(' • ');
-  document.getElementById('warning-copy').innerHTML = `<strong>Warning</strong> ${esc(text)}. Run: <code>pip install ${esc([...pkgs].join(' '))}</code>`;
-  banner.classList.add('show');
-}
-
-function edgeCountMap() {
-  const counts = new Map();
-  (G?.nodes || []).forEach((node) => counts.set(normalizeId(node.id), 0));
-  (G?.edges || []).forEach((edge) => {
-    const source = normalizeId(edge.source.id || edge.source);
-    const target = normalizeId(edge.target.id || edge.target);
-    counts.set(source, (counts.get(source) || 0) + 1);
-    counts.set(target, (counts.get(target) || 0) + 1);
-  });
-  return counts;
-}
-
-function seedPosition(node, width, height, counts) {
-  const degree = counts.get(normalizeId(node.id)) || 0;
-  const dirHash = [...dirname(node.id)].reduce((sum, ch) => sum + ch.charCodeAt(0), 0);
-  const jitterX = ((dirHash % 37) - 18) * 6;
-  const jitterY = ((dirHash % 29) - 14) * 6;
-  if (node.classification === 'ORPHAN') return { x: width * 0.18 + jitterX, y: height * 0.46 + jitterY };
-  if (node.classification === 'ISLAND') return { x: width * 0.80 + jitterX, y: height * 0.24 + jitterY };
-  if (node.classification === 'TEST') return { x: width * 0.78 + jitterX, y: height * 0.64 + jitterY };
-  if (node.classification === 'GENERATED') return { x: width * 0.24 + jitterX, y: height * 0.72 + jitterY };
-  const depth = node.depth >= 0 ? node.depth : 3;
-  const angle = (dirHash % 360) * (Math.PI / 180);
-  const radius = 90 + depth * 34 + Math.max(0, 4 - Math.min(degree, 4)) * 8;
-  const x = width * 0.52 + Math.cos(angle) * radius + jitterX * 0.35;
-  const y = height * 0.50 + Math.sin(angle) * radius * 0.72 + jitterY * 0.35;
-  return { x, y };
-}
-
-function calculateNodePositions(nodes, edges) {
-  const width = document.getElementById('graph').clientWidth || 1000;
-  const height = document.getElementById('graph').clientHeight || 760;
-  const counts = edgeCountMap();
-  const simNodes = nodes.map((node) => {
-    const seed = seedPosition(node, width, height, counts);
-    return { ...node, id: normalizeId(node.id), x: seed.x, y: seed.y };
-  });
-  const simEdges = edges.map((edge) => ({ source: normalizeId(edge.source.id || edge.source), target: normalizeId(edge.target.id || edge.target) }));
-  const map = new Map(simNodes.map((node) => [node.id, node]));
-  const forceEdges = simEdges.filter((edge) => map.has(edge.source) && map.has(edge.target));
-  const entryIds = new Set(simNodes.filter((node) => node.classification === 'ENTRY').map((node) => node.id));
-  const simulation = d3.forceSimulation(simNodes)
-    .force('link', d3.forceLink(forceEdges).id((d) => d.id).distance((edge) => {
-      const source = map.get(edge.source.id || edge.source);
-      const target = map.get(edge.target.id || edge.target);
-      const sourceDepth = source?.depth >= 0 ? source.depth : 2;
-      const targetDepth = target?.depth >= 0 ? target.depth : 2;
-      return 74 + Math.abs(sourceDepth - targetDepth) * 10;
-    }).strength(0.22))
-    .force('charge', d3.forceManyBody().strength((node) => {
-      if (node.classification === 'ENTRY') return -900;
-      if (node.classification === 'CONNECTED') return -620;
-      if (node.classification === 'LEAF') return -380;
-      return -260;
-    }).distanceMax(520))
-    .force('collide', d3.forceCollide().radius((node) => node.classification === 'ENTRY' ? 34 : 24).iterations(2))
-    .force('x', d3.forceX((node) => {
-      if (node.classification === 'ORPHAN') return width * 0.18;
-      if (node.classification === 'ISLAND') return width * 0.82;
-      if (node.classification === 'TEST') return width * 0.80;
-      if (node.classification === 'GENERATED') return width * 0.26;
-      if (entryIds.has(node.id)) return width * 0.48;
-      return width * 0.52;
-    }).strength((node) => ['ORPHAN','ISLAND','TEST','GENERATED'].includes(node.classification) ? 0.18 : 0.05))
-    .force('y', d3.forceY((node) => {
-      if (node.classification === 'ORPHAN') return height * 0.42;
-      if (node.classification === 'ISLAND') return height * 0.30;
-      if (node.classification === 'TEST') return height * 0.66;
-      if (node.classification === 'GENERATED') return height * 0.74;
-      if (entryIds.has(node.id)) return height * 0.56;
-      return height * 0.50;
-    }).strength((node) => ['ORPHAN','ISLAND','TEST','GENERATED'].includes(node.classification) ? 0.18 : 0.05))
-    .force('radial', d3.forceRadial((node) => {
-      if (['ORPHAN','ISLAND','TEST','GENERATED'].includes(node.classification)) return 0;
-      const depth = node.depth >= 0 ? node.depth : 3;
-      return 40 + depth * 48;
-    }, width * 0.52, height * 0.50).strength((node) => ['ORPHAN','ISLAND','TEST','GENERATED'].includes(node.classification) ? 0 : 0.12));
-  for (let i = 0; i < 260; i += 1) simulation.tick();
-  simulation.stop();
-  const positions = {};
-  simNodes.forEach((node) => { positions[node.id] = { x: node.x, y: node.y }; });
-  return positions;
-}
-
-function buildElements() {
-  const visibleNodes = (G?.nodes || []).filter(nodeVisible);
-  const visibleIds = new Set(visibleNodes.map((node) => normalizeId(node.id)));
-  const parents = new Set();
-  const elements = [];
-  if (clusterMode) {
-    visibleNodes.forEach((node) => {
-      const dir = dirname(node.id);
-      if (!parents.has(dir)) {
-        parents.add(dir);
-        elements.push({ data: { id: `cluster:${dir}`, label: dir === '.' ? 'root' : basename(dir), isCluster: true } });
-      }
-    });
-  }
-  visibleNodes.forEach((node) => {
-    elements.push({
-      data: {
-        id: normalizeId(node.id),
-        label: node.name,
-        fullpath: normalizeId(node.filepath || node.id),
-        classification: node.classification,
-        language: node.language,
-        depth: node.depth,
-        island_id: node.island_id,
-        parent: clusterMode ? `cluster:${dirname(node.id)}` : undefined,
-        isCluster: false,
-      }
-    });
-  });
-  (G?.edges || []).forEach((edge, index) => {
-    const source = normalizeId(edge.source.id || edge.source);
-    const target = normalizeId(edge.target.id || edge.target);
-    if (visibleIds.has(source) && visibleIds.has(target)) {
-      elements.push({ data: { id: `e:${index}:${source}:${target}`, source, target, line: edge.line || null } });
+  function getPerformanceProfile(nodeCount = 0, edgeCount = 0) {
+    const mode = APP.state?.perfMode || 'auto';
+    if (mode === 'quality') {
+      return {
+        motionNodes: 700,
+        motionEdges: 2200,
+        maxRenderNodesZoomedOut: 280,
+        maxRenderNodesMidZoom: 460,
+        maxRenderNodesZoomedIn: 700,
+        maxRenderEdgesDense: 1200,
+        maxRenderEdgesNormal: 2200,
+        maxMinimapEdges: 1000,
+        maxMinimapNodes: 550,
+        autoCollapse: false
+      };
     }
-  });
-  return elements;
-}
-
-function makeCy() {
-  const elements = buildElements();
-  const visibleNodes = (G?.nodes || []).filter(nodeVisible);
-  const visibleEdges = (G?.edges || []).filter((edge) => {
-    const source = getNodeById(edge.source.id || edge.source);
-    const target = getNodeById(edge.target.id || edge.target);
-    return source && target && nodeVisible(source) && nodeVisible(target);
-  });
-  const positions = calculateNodePositions(visibleNodes, visibleEdges);
-  if (cy) cy.destroy();
-  cy = cytoscape({
-    container: document.getElementById('graph'),
-    elements,
-    wheelSensitivity: 0.12,
-    layout: { name: 'preset', fit: true, padding: 48, positions: (node) => positions[node.id()] || { x: 120, y: 120 } },
-    style: [
-      {
-        selector: 'node',
-        style: {
-          'background-color': (ele) => getTheme(ele.data('classification')).fill,
-          'border-width': 2,
-          'border-color': (ele) => cycleNodeSet.has(ele.id()) ? '#ffaa00' : getLangColor(ele.data('language')),
-          'label': showLabels ? 'data(label)' : '',
-          'color': '#6f7fae',
-          'font-size': 9,
-          'font-weight': 500,
-          'text-margin-y': -14,
-          'text-wrap': 'none',
-          'text-background-opacity': 0,
-          'text-outline-color': 'rgba(5,6,13,.9)',
-          'text-outline-width': 2,
-          'width': (ele) => ele.data('classification') === 'ENTRY' ? 26 : 16,
-          'height': (ele) => ele.data('classification') === 'ENTRY' ? 26 : 16,
-          'shadow-blur': 0,
-          'overlay-opacity': 0,
-        }
-      },
-      {
-        selector: '$node > node',
-        style: {
-          'background-color': 'rgba(176,111,255,.04)',
-          'border-color': 'rgba(176,111,255,.22)',
-          'border-width': 1,
-          'border-style': 'dashed',
-          'shape': 'roundrectangle',
-          'label': 'data(label)',
-          'font-size': 11,
-          'font-weight': 700,
-          'text-valign': 'top',
-          'text-halign': 'left',
-          'text-margin-x': 12,
-          'text-margin-y': 12,
-          'color': '#c18cff',
-          'padding': 28,
-        }
-      },
-      {
-        selector: 'edge',
-        style: {
-          'curve-style': 'bezier',
-          'line-color': 'rgba(41,57,102,.72)',
-          'target-arrow-color': 'rgba(41,57,102,.72)',
-          'target-arrow-shape': 'triangle',
-          'arrow-scale': .72,
-          'width': 1.15,
-          'opacity': .84,
-        }
-      },
-      { selector: '.dim', style: { 'opacity': .1, 'text-opacity': .1 } },
-      { selector: '.active', style: { 'border-color': '#00e5ff', 'border-width': 3, 'opacity': 1, 'color': '#ffffff', 'text-outline-color': 'rgba(5,6,13,.95)', 'text-outline-width': 2 } },
-      { selector: '.cycle', style: { 'border-color': '#ffaa00', 'line-color': '#ffaa00', 'target-arrow-color': '#ffaa00', 'opacity': 1 } },
-      { selector: '.match', style: { 'opacity': 1, 'text-opacity': 1, 'line-color': 'rgba(0,229,255,.32)', 'target-arrow-color': 'rgba(0,229,255,.32)' } },
-    ]
-  });
-  cy.on('tap', 'node', (event) => {
-    if (event.target.data('isCluster')) return;
-    selectNode(event.target.id());
-  });
-  cy.on('tap', (event) => { if (event.target === cy) clearSelection(); });
-  cy.on('render zoom pan', drawMinimap);
-  cy.ready(() => { drawMinimap(); });
-  setTimeout(drawMinimap, 40);
-  setTimeout(drawMinimap, 220);
-  applySearchAndSelectionState();
-  drawMinimap();
-}
-
-function getSearchTreeIds() {
-  if (!searchQuery || !G) return null;
-  const visibleIds = new Set((G.nodes || []).filter(nodeVisible).map((node) => normalizeId(node.id)));
-  const matches = (G.nodes || []).filter((node) => nodeVisible(node) && nodeMatchesSearch(node)).map((node) => normalizeId(node.id));
-  if (!matches.length) return new Set();
-  const adj = new Map();
-  (G.edges || []).forEach((edge) => {
-    const source = normalizeId(edge.source.id || edge.source);
-    const target = normalizeId(edge.target.id || edge.target);
-    if (!visibleIds.has(source) || !visibleIds.has(target)) return;
-    if (!adj.has(source)) adj.set(source, new Set());
-    if (!adj.has(target)) adj.set(target, new Set());
-    adj.get(source).add(target);
-    adj.get(target).add(source);
-  });
-  const seen = new Set(matches);
-  const queue = [...matches];
-  while (queue.length) {
-    const current = queue.shift();
-    (adj.get(current) || new Set()).forEach((next) => {
-      if (!seen.has(next)) { seen.add(next); queue.push(next); }
-    });
-  }
-  return seen;
-}
-
-function applySearchAndSelectionState() {
-  if (!cy) return;
-  const tree = getSearchTreeIds();
-  const hasSearch = !!searchQuery;
-  const selected = normalizeId(selectedId || '');
-  const matches = hasSearch ? (G.nodes || []).filter((node) => nodeVisible(node) && nodeMatchesSearch(node)).map((node) => normalizeId(node.id)) : [];
-  document.getElementById('search-status').textContent = hasSearch ? (matches.length ? `${matches.length} match${matches.length !== 1 ? 'es' : ''} • dependency tree highlighted` : 'No matches') : '';
-  cy.nodes().forEach((node) => {
-    node.removeClass('dim active cycle match');
-    if (node.data('isCluster')) return;
-    if (highlightCycles && cycleNodeSet.has(node.id())) node.addClass('cycle');
-    if (selected && node.id() === selected) node.addClass('active');
-    if (hasSearch) {
-      if (tree && tree.has(node.id())) node.addClass('match'); else node.addClass('dim');
+    if (mode === 'safe') {
+      return {
+        motionNodes: 260,
+        motionEdges: 900,
+        maxRenderNodesZoomedOut: 140,
+        maxRenderNodesMidZoom: 240,
+        maxRenderNodesZoomedIn: 360,
+        maxRenderEdgesDense: 500,
+        maxRenderEdgesNormal: 900,
+        maxMinimapEdges: 360,
+        maxMinimapNodes: 220,
+        autoCollapse: true
+      };
     }
-  });
-  cy.edges().forEach((edge) => {
-    edge.removeClass('dim active cycle match');
-    const source = edge.data('source');
-    const target = edge.data('target');
-    if (highlightCycles && cycleNodeSet.has(source) && cycleNodeSet.has(target)) edge.addClass('cycle');
-    if (selected && (source === selected || target === selected)) edge.addClass('active');
-    if (hasSearch) {
-      if (tree && tree.has(source) && tree.has(target)) edge.addClass('match'); else edge.addClass('dim');
+    const extraLarge = nodeCount > PERF.hugeGraphNodes || edgeCount > PERF.hugeGraphEdges;
+    return {
+      motionNodes: PERF.largeGraphNodes,
+      motionEdges: PERF.largeGraphEdges,
+      maxRenderNodesZoomedOut: extraLarge ? 170 : PERF.maxRenderNodesZoomedOut,
+      maxRenderNodesMidZoom: extraLarge ? 280 : PERF.maxRenderNodesMidZoom,
+      maxRenderNodesZoomedIn: extraLarge ? 420 : PERF.maxRenderNodesZoomedIn,
+      maxRenderEdgesDense: extraLarge ? 650 : PERF.maxRenderEdgesDense,
+      maxRenderEdgesNormal: extraLarge ? 1100 : PERF.maxRenderEdgesNormal,
+      maxMinimapEdges: extraLarge ? 420 : PERF.maxMinimapEdges,
+      maxMinimapNodes: extraLarge ? 260 : PERF.maxMinimapNodes,
+      autoCollapse: extraLarge
+    };
+  }
+
+  function applyLargeGraphDefaults() {
+    const metrics = graphMetrics();
+    const profile = getPerformanceProfile(metrics.nodes, metrics.edges);
+    if (!profile.autoCollapse) return;
+    APP.state.layoutMode = 'cluster';
+    APP.state.showLabels = false;
+    APP.state.showFullGraph = false;
+  }
+
+  function $(id) { return document.getElementById(id); }
+  function normalizeId(id) { return String(id || '').replace(/\\/g, '/'); }
+  function basename(id) { const parts = normalizeId(id).split('/'); return parts[parts.length - 1] || id; }
+  function dirname(id) { const parts = normalizeId(id).split('/'); parts.pop(); return parts.join('/') || '.'; }
+  function escapeHtml(value) { return String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
+  function displayLang(lang) { return ({ javascript: 'JavaScript', typescript: 'TypeScript', tsx: 'TSX', python: 'Python', go: 'Go', c: 'C', cpp: 'C/C++', java: 'Java', kotlin: 'Kotlin', generic: 'Generic' })[lang] || lang || 'Unknown'; }
+  function getTheme(cls) { return THEME[cls] || THEME.ORPHAN; }
+  function getLangColor(lang) { return LANG_COLORS[(lang || '').toLowerCase()] || '#6b7280'; }
+  function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+  function formatSize(bytes) { if (!bytes) return '0 B'; if (bytes < 1024) return `${bytes} B`; if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`; return `${(bytes / 1048576).toFixed(1)} MB`; }
+  function formatDate(ts) { if (!ts) return '—'; const d = new Date(ts * 1000); return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString(); }
+  function setEquals(a, b) { if (a.size !== b.size) return false; for (const item of a) if (!b.has(item)) return false; return true; }
+  function getCanvasSize() { return { width: ELS.canvasWrap.clientWidth || 1000, height: ELS.canvasWrap.clientHeight || 800 }; }
+  function cacheKey(hash, mode) { return `orbits.layout.${hash}.${mode}`; }
+  function currentLanguageSet() { return APP.state.activeLangs === null ? APP.indexes?.allLanguages || new Set() : APP.state.activeLangs; }
+  function nodeVisible(node) { return APP.state.visibleClasses.has(node.classification) && (!node.language || currentLanguageSet().has(node.language)); }
+
+  function captureElements() {
+    ['graph-canvas', 'canvas-wrap', 'minimap', 'drop-overlay', 'search-box', 'search-input', 'search-status', 'warning-banner', 'warning-copy', 'worker-status', 'worker-message', 'health-pill', 'elapsed', 'perf-mode', 'toast', 'btn-waste', 'btn-cycles', 'btn-insp', 'btn-cluster', 'btn-labels', 'btn-filter', 'btn-lang', 'btn-search', 'btn-reset', 'btn-folder', 'btn-open', 'btn-cycle-highlight', 'btn-focus', 'btn-full', 'btn-perf', 'layout-menu', 'layout-force', 'layout-cluster', 'layout-radial', 'lang-menu', 'lang-chip-grid', 'filter-panel', 'filter-chip-grid', 'waste-list', 'waste-badge', 'cycle-list', 'cycle-badge', 'left-rail', 'inspector', 'ip', 'ic', 'iname', 'imeta', 'ihistory', 'icycle', 'iout', 'iin', 'file-input', 'warning-dismiss', 'lang-all', 'lang-none', 'filter-all', 'filter-waste', 'filter-default', 's-files', 's-edges', 's-orphans', 's-cycles', 's-health', 's-unreachable', 's-max-depth', 's-resolved', 's-langs'].forEach((id) => { ELS[id] = $(id); });
+    ELS.canvasWrap = $('canvas-wrap');
+    APP.canvas = ELS['graph-canvas'];
+    APP.ctx = APP.canvas.getContext('2d');
+  }
+
+  function simpleHash(value) {
+    let hash = 2166136261;
+    for (let i = 0; i < value.length; i += 1) {
+      hash ^= value.charCodeAt(i);
+      hash = Math.imul(hash, 16777619);
     }
-  });
-  document.querySelectorAll('.list-item').forEach((item) => item.classList.toggle('active', normalizeId(item.dataset.focus) === selected));
-}
-
-function kv(key, value) { return `<div class="kv-row"><span class="k">${esc(key)}</span><span class="v">${value}</span></div>`; }
-
-function renderEdgeChips(target, edges, direction) {
-  if (!edges.length) {
-    target.className = 'empty';
-    target.textContent = 'None';
-    return;
+    return (hash >>> 0).toString(16);
   }
-  target.className = '';
-  target.innerHTML = '<div class="chip-cont">' + edges.map((edge) => {
-    const id = direction === 'in' ? normalizeId(edge.source.id || edge.source) : normalizeId(edge.target.id || edge.target);
-    const line = edge.line ? `:${edge.line}` : '';
-    return `<button class="chip ${direction}" data-focus="${esc(id)}" title="${esc(id + line)}">${esc(basename(id))}${line}</button>`;
-  }).join('') + '</div>';
-  bindFocusButtons(target);
-}
 
-function renderInspector(node) {
-  if (!node) {
-    document.getElementById('iname').textContent = 'Click any node to inspect';
-    document.getElementById('iname').className = 'empty';
-    document.getElementById('imeta').className = 'empty';
-    document.getElementById('imeta').textContent = 'No node selected';
-    document.getElementById('icycle').className = 'empty';
-    document.getElementById('icycle').textContent = 'No node selected';
-    document.getElementById('iout').className = 'empty';
-    document.getElementById('iout').textContent = 'No node selected';
-    document.getElementById('iin').className = 'empty';
-    document.getElementById('iin').textContent = 'No node selected';
-    return;
+  function graphHash(graph) {
+    const nodes = [...graph.nodes].map((n) => normalizeId(n.id)).sort();
+    const edges = [...graph.edges].map((e) => `${normalizeId(e.source)}>${normalizeId(e.target)}:${e.line || 0}`).sort();
+    return simpleHash(`${nodes.join('|')}::${edges.join('|')}`);
   }
-  const nodeId = normalizeId(node.id);
-  const inbound = (G.edges || []).filter((edge) => normalizeId(edge.target.id || edge.target) === nodeId && getNodeById(edge.source.id || edge.source) && nodeVisible(getNodeById(edge.source.id || edge.source)));
-  const outbound = (G.edges || []).filter((edge) => normalizeId(edge.source.id || edge.source) === nodeId && getNodeById(edge.target.id || edge.target) && nodeVisible(getNodeById(edge.target.id || edge.target)));
-  document.getElementById('iname').className = '';
-  document.getElementById('iname').textContent = normalizeId(node.filepath || node.id);
-  document.getElementById('imeta').className = '';
-  document.getElementById('imeta').innerHTML = [
-    kv('Class', `<span style="color:${getTheme(node.classification).fill}">${esc(node.classification)}</span>`),
-    kv('Language', `<span style="color:${getLangColor(node.language)}">${esc(node.language || '—')}</span>`),
-    kv('Size', esc(formatSize(node.size))),
-    kv('Inbound', esc(String(inbound.length))),
-    kv('Outbound', esc(String(outbound.length))),
-    kv('Depth', esc(node.depth >= 0 ? String(node.depth) : '∞')),
-    kv('Island', node.island_id >= 0 ? `<span style="color:#b06fff">Cluster ${node.island_id + 1}</span>` : '—'),
-  ].join('');
-  const cycles = cycleLookup.get(nodeId) || [];
-  document.getElementById('icycle').className = '';
-  document.getElementById('icycle').innerHTML = cycles.length ? cycles.map((entry) => `<div class="cycle-path">${entry.path.map((id, index) => `${index ? '<span class="cycle-arrow">→</span>' : ''}<span class="chip cycle" data-focus="${esc(id)}">${esc(basename(id))}</span>`).join('')}</div>`).join('') : '<span class="empty">This node is not part of a cycle.</span>';
-  bindFocusButtons(document.getElementById('icycle'));
-  renderEdgeChips(document.getElementById('iout'), outbound, 'out');
-  renderEdgeChips(document.getElementById('iin'), inbound, 'in');
-}
 
-function selectNode(id) {
-  selectedId = normalizeId(id);
-  renderInspector(getNodeById(selectedId));
-  applySearchAndSelectionState();
-}
-
-function clearSelection() {
-  selectedId = null;
-  renderInspector(null);
-  applySearchAndSelectionState();
-}
-
-function focusNode(id) {
-  const target = normalizeId(id);
-  if (!cy) return;
-  const node = cy.getElementById(target);
-  if (!node || !node.length) return;
-  cy.animate({ center: { eles: node }, zoom: Math.min(2.2, Math.max(cy.zoom(), 1.6)) }, { duration: 500 });
-  selectNode(target);
-}
-
-function drawMinimap() {
-  const canvas = document.getElementById('minimap');
-  const ctx = canvas.getContext('2d');
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  const bg = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
-  bg.addColorStop(0, 'rgba(9,14,32,.98)');
-  bg.addColorStop(1, 'rgba(4,7,18,.98)');
-  ctx.fillStyle = bg;
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.strokeStyle = 'rgba(0,229,255,.16)';
-  ctx.strokeRect(.5, .5, canvas.width - 1, canvas.height - 1);
-  if (!cy || !cy.nodes(':child').length) return;
-  const nodes = cy.nodes(':child');
-  const xs = nodes.map((node) => node.position('x'));
-  const ys = nodes.map((node) => node.position('y'));
-  const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
-  const pad = 12;
-  const scale = Math.min((canvas.width - pad * 2) / Math.max(1, maxX - minX), (canvas.height - pad * 2) / Math.max(1, maxY - minY));
-  const mapX = (x) => pad + (x - minX) * scale;
-  const mapY = (y) => pad + (y - minY) * scale;
-  ctx.lineWidth = 1;
-  ctx.strokeStyle = 'rgba(42,58,102,.62)';
-  cy.edges().forEach((edge) => {
-    const s = edge.source().position();
-    const t = edge.target().position();
-    ctx.beginPath();
-    ctx.moveTo(mapX(s.x), mapY(s.y));
-    ctx.lineTo(mapX(t.x), mapY(t.y));
-    ctx.stroke();
-  });
-  nodes.forEach((node) => {
-    const theme = getTheme(node.data('classification'));
-    ctx.fillStyle = theme.fill;
-    ctx.beginPath();
-    ctx.arc(mapX(node.position('x')), mapY(node.position('y')), node.data('classification') === 'ENTRY' ? 3 : 2, 0, Math.PI * 2);
-    ctx.fill();
-  });
-  const extent = cy.extent();
-  ctx.strokeStyle = 'rgba(0,229,255,.85)';
-  ctx.fillStyle = 'rgba(0,229,255,.08)';
-  const x = mapX(extent.x1), y = mapY(extent.y1), w = Math.max(10, (extent.x2 - extent.x1) * scale), h = Math.max(10, (extent.y2 - extent.y1) * scale);
-  ctx.fillRect(x, y, w, h);
-  ctx.strokeRect(x, y, w, h);
-}
-
-function rerender() {
-  if (!G) return;
-  buildCycleIndex();
-  updateStats();
-  renderLanguageMenu();
-  renderFilterPanel();
-  renderWaste();
-  renderCycles();
-  makeCy();
-  if (selectedId && getNodeById(selectedId) && nodeVisible(getNodeById(selectedId))) renderInspector(getNodeById(selectedId)); else clearSelection();
-  updateWarningBanner();
-}
-
-function loadGraph(data) {
-  G = data;
-  activeLangs = null;
-  visibleClasses = new Set(DEFAULT_CLASSES);
-  clusterMode = false;
-  highlightCycles = false;
-  searchQuery = '';
-  dismissedWarning = false;
-  selectedId = null;
-  document.getElementById('search-input').value = '';
-  document.getElementById('search-box').classList.remove('open');
-  document.getElementById('btn-cluster').classList.remove('on');
-  rerender();
-}
-
-async function walkDirectory(handle, prefix, files) {
-  for await (const [name, entry] of handle.entries()) {
-    if (entry.kind === 'directory') {
-      if (['.git', 'node_modules', '.venv', '__pycache__', '.pytest_cache', '.mypy_cache', 'dist', 'build', 'target'].includes(name)) continue;
-      await walkDirectory(entry, prefix ? `${prefix}/${name}` : name, files);
-    } else if (entry.kind === 'file') {
-      const path = prefix ? `${prefix}/${name}` : name;
-      if (/\.(json|py|js|jsx|ts|tsx|go|c|h|cc|cpp|cxx|hpp|hh|java|kt|kts)$/i.test(path)) {
-        const file = await entry.getFile();
-        if (file.size > 1024 * 1024 * 2) continue;
-        files.push({ path, text: await file.text(), size: file.size, mtime: Math.floor(file.lastModified / 1000) });
-      }
-    }
+  function getSearchTokens(node) {
+    const full = normalizeId(node.filepath || node.id).toLowerCase();
+    const base = basename(node.id).toLowerCase();
+    return { base, full, tokens: new Set(`${base} ${full}`.split(/[^a-z0-9_./-]+/i).filter(Boolean)) };
   }
-}
 
-function ensureWorker() {
-  if (worker) return worker;
-  worker = new Worker('/visualizer_worker.js');
-  worker.onmessage = (event) => {
+  function showWorkerStatus(message, percent) {
+    ELS['worker-status'].classList.add('show');
+    ELS['worker-message'].textContent = message;
+    document.querySelector('#worker-bar > div').style.width = `${clamp(percent || 0, 0, 100)}%`;
+  }
+
+  function hideWorkerStatus() { ELS['worker-status'].classList.remove('show'); }
+
+  function ensureWorker() {
+    if (APP.worker) return APP.worker;
+    APP.worker = new Worker('visualizer_worker.js');
+    APP.worker.onmessage = handleWorkerMessage;
+    return APP.worker;
+  }
+
+  function handleWorkerMessage(event) {
     const { type, payload } = event.data || {};
     if (type === 'progress') showWorkerStatus(payload.message, payload.percent || 0);
-    if (type === 'done') { hideWorkerStatus(); loadGraph(payload); }
-    if (type === 'error') { hideWorkerStatus(); alert(payload.message || 'Worker analysis failed'); }
-  };
-  return worker;
-}
-
-function startBrowserAnalysis(files, rootName) {
-  showWorkerStatus(`Analyzing ${files.length} files in browser...`, 8);
-  ensureWorker().postMessage({ type: 'analyzeProject', payload: { files, rootName } });
-}
-
-function showWorkerStatus(message, percent) {
-  const box = document.getElementById('worker-status');
-  box.classList.add('show');
-  document.getElementById('worker-message').textContent = message;
-  document.querySelector('#worker-bar > div').style.width = `${Math.max(0, Math.min(100, percent || 0))}%`;
-}
-
-function hideWorkerStatus() { document.getElementById('worker-status').classList.remove('show'); }
-
-async function openFolder() {
-  if (!window.showDirectoryPicker) {
-    alert('File System Access API is not available in this browser. Use a Chromium-based browser.');
-    return;
+    if (type === 'done') {
+      hideWorkerStatus();
+      setGraphData(payload, { source: 'browser-analysis' });
+      toast('Folder analyzed in browser');
+      return;
+    }
+    if (type === 'layout-done') {
+      if (!payload || payload.requestId !== APP.workerRequestId) return;
+      hideWorkerStatus();
+      APP.layoutPositions = new Map(Object.entries(payload.positions || {}).map(([id, pos]) => [normalizeId(id), { x: pos.x, y: pos.y }]));
+      APP.anchorPositions = new Map([...APP.layoutPositions.entries()].map(([id, pos]) => [id, { x: pos.x, y: pos.y }]));
+      try { localStorage.setItem(cacheKey(APP.indexes.hash, APP.state.layoutMode), JSON.stringify(payload.positions || {})); } catch { }
+      restartMotionSimulation();
+      scheduleRender();
+      return;
+    }
+    if (type === 'error') { hideWorkerStatus(); toast(payload.message || 'Worker failed'); }
   }
-  const handle = await window.showDirectoryPicker();
-  const files = [];
-  showWorkerStatus('Reading files...', 4);
-  await walkDirectory(handle, '', files);
-  startBrowserAnalysis(files, handle.name || 'workspace');
-}
 
-function openGraphFile(file) {
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = () => {
-    try { loadGraph(JSON.parse(reader.result)); } catch { alert('Invalid graph.json'); }
-  };
-  reader.readAsText(file);
-}
+  function buildIndexes(graph) {
+    const nodeById = new Map();
+    const outboundByNode = new Map();
+    const inboundByNode = new Map();
+    const edgeListByNode = new Map();
+    const nodesByLanguage = new Map();
+    const nodesByClass = new Map();
+    const cycleMembershipByNode = new Map();
+    const searchByNode = new Map();
+    const edges = graph.edges.map((edge) => ({ ...edge, source: normalizeId(edge.source.id || edge.source), target: normalizeId(edge.target.id || edge.target), line: edge.line || null }));
 
-function bindUi() {
-  document.querySelectorAll('.tab').forEach((tab) => tab.addEventListener('click', () => {
-    document.querySelectorAll('.tab').forEach((item) => item.classList.remove('active'));
-    document.querySelectorAll('#leftbar .panel-body').forEach((panel) => panel.classList.add('hidden'));
-    tab.classList.add('active');
-    document.getElementById(tab.dataset.panel).classList.remove('hidden');
-  }));
-  document.getElementById('btn-waste').onclick = () => { document.getElementById('leftbar').classList.toggle('collapsed'); document.getElementById('btn-waste').classList.toggle('on'); };
-  document.getElementById('btn-cycles').onclick = () => { document.querySelector('[data-panel="cycles-panel"]').click(); document.getElementById('leftbar').classList.remove('collapsed'); document.getElementById('btn-waste').classList.add('on'); };
-  document.getElementById('btn-inspector').onclick = () => { document.getElementById('inspector-wrap').classList.toggle('collapsed'); document.getElementById('btn-inspector').classList.toggle('on'); };
-  document.getElementById('btn-cluster').onclick = () => { clusterMode = !clusterMode; document.getElementById('btn-cluster').classList.toggle('on', clusterMode); rerender(); };
-  document.getElementById('btn-labels').onclick = () => { showLabels = !showLabels; document.getElementById('btn-labels').classList.toggle('on', showLabels); if (cy) makeCy(); };
-  document.getElementById('btn-search').onclick = () => { document.getElementById('search-box').classList.add('open'); document.getElementById('search-input').focus(); document.getElementById('search-input').select(); };
-  document.getElementById('btn-lang').onclick = () => { if (G) document.getElementById('lang-menu').classList.toggle('open'); };
-  document.getElementById('btn-filter').onclick = () => { if (G) document.getElementById('filter-panel').classList.toggle('open'); };
-  document.getElementById('btn-reset').onclick = () => { if (cy) cy.fit(cy.elements(':visible'), 40); };
-  document.getElementById('btn-folder').onclick = () => openFolder().catch((error) => alert(error.message || String(error)));
-  document.getElementById('btn-open').onclick = () => document.getElementById('file-input').click();
-  document.getElementById('file-input').onchange = (event) => openGraphFile(event.target.files[0]);
-  document.getElementById('lang-all').onclick = () => { activeLangs = null; rerender(); };
-  document.getElementById('lang-none').onclick = () => { activeLangs = new Set(); rerender(); };
-  document.getElementById('filter-all').onclick = () => { visibleClasses = new Set(DEFAULT_CLASSES); rerender(); };
-  document.getElementById('filter-dead').onclick = () => { visibleClasses = new Set(['ORPHAN', 'ISLAND']); rerender(); };
-  document.getElementById('filter-reset').onclick = () => { visibleClasses = new Set(DEFAULT_CLASSES); rerender(); };
-  document.getElementById('warning-dismiss').onclick = () => { dismissedWarning = true; updateWarningBanner(); };
-  document.getElementById('search-input').oninput = (event) => { searchQuery = event.target.value.trim(); applySearchAndSelectionState(); };
-  document.getElementById('search-input').onkeydown = (event) => {
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      const first = (G?.nodes || []).find((node) => nodeVisible(node) && nodeMatchesSearch(node));
-      if (first) focusNode(first.id);
-    }
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      searchQuery = '';
-      event.target.value = '';
-      document.getElementById('search-box').classList.remove('open');
-      applySearchAndSelectionState();
-    }
-  };
-  document.addEventListener('keydown', (event) => {
-    const editing = ['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName) || document.activeElement?.isContentEditable;
-    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
-      event.preventDefault(); document.getElementById('btn-search').click();
-    } else if (!editing && event.key === '/') {
-      event.preventDefault(); document.getElementById('btn-search').click();
-    }
-  });
-  document.addEventListener('click', (event) => {
-    if (!event.target.closest('#lang-menu') && !event.target.closest('#btn-lang')) document.getElementById('lang-menu').classList.remove('open');
-    if (!event.target.closest('#filter-panel') && !event.target.closest('#btn-filter')) document.getElementById('filter-panel').classList.remove('open');
-  });
-  document.addEventListener('dragover', (event) => event.preventDefault());
-  document.addEventListener('drop', (event) => { event.preventDefault(); openGraphFile(event.dataTransfer.files[0]); });
-  window.addEventListener('resize', () => drawMinimap());
-}
+    graph.nodes.forEach((node) => {
+      const normalized = { ...node, id: normalizeId(node.id), filepath: normalizeId(node.filepath || node.id), dir: node.dir || dirname(node.id) };
+      nodeById.set(normalized.id, normalized);
+      outboundByNode.set(normalized.id, []);
+      inboundByNode.set(normalized.id, []);
+      edgeListByNode.set(normalized.id, []);
+      if (normalized.language) {
+        if (!nodesByLanguage.has(normalized.language)) nodesByLanguage.set(normalized.language, new Set());
+        nodesByLanguage.get(normalized.language).add(normalized.id);
+      }
+      if (!nodesByClass.has(normalized.classification)) nodesByClass.set(normalized.classification, new Set());
+      nodesByClass.get(normalized.classification).add(normalized.id);
+      searchByNode.set(normalized.id, getSearchTokens(normalized));
+    });
 
-bindUi();
-window.loadGraph = loadGraph;
-if (location.protocol !== 'file:') {
-  fetch('/graph.json').then((response) => response.ok ? response.json() : null).then((data) => { if (data?.nodes) loadGraph(data); }).catch(() => {});
-}
+    edges.forEach((edge) => {
+      if (!nodeById.has(edge.source) || !nodeById.has(edge.target)) return;
+      outboundByNode.get(edge.source).push(edge);
+      inboundByNode.get(edge.target).push(edge);
+      edgeListByNode.get(edge.source).push(edge);
+      edgeListByNode.get(edge.target).push(edge);
+    });
+
+    (graph.cycles || []).forEach((cycle, index) => {
+      cycle.map(normalizeId).forEach((id) => {
+        if (!cycleMembershipByNode.has(id)) cycleMembershipByNode.set(id, []);
+        cycleMembershipByNode.get(id).push({ index, path: cycle.map(normalizeId) });
+      });
+    });
+
+    const neighborsByNode = new Map();
+    nodeById.forEach((_value, id) => neighborsByNode.set(id, new Set()));
+    edges.forEach((edge) => {
+      neighborsByNode.get(edge.source)?.add(edge.target);
+      neighborsByNode.get(edge.target)?.add(edge.source);
+    });
+
+    nodeById.forEach((node, id) => {
+      const outbound = outboundByNode.get(id)?.length || 0;
+      const inbound = inboundByNode.get(id)?.length || 0;
+      const degree = outbound + inbound;
+      const cycleBoost = cycleMembershipByNode.has(id) ? 3 : 0;
+      const depthBoost = node.depth >= 0 ? Math.max(0, 6 - Math.min(node.depth, 6)) : 0;
+      const entryBoost = node.classification === 'ENTRY' ? 5 : 0;
+      const leafPenalty = node.classification === 'LEAF' ? -1.5 : 0;
+      node.importance = degree * 1.6 + cycleBoost + depthBoost + entryBoost + leafPenalty;
+    });
+
+    return { nodeById, edges, outboundByNode, inboundByNode, edgeListByNode, nodesByLanguage, nodesByClass, cycleMembershipByNode, neighborsByNode, searchByNode, allLanguages: new Set([...nodesByLanguage.keys()]), hash: graphHash({ nodes: [...nodeById.values()], edges }) };
+  }
+
+  function setGraphData(data, options = {}) {
+    APP.graph = {
+      ...data,
+      nodes: (data.nodes || []).map((node) => ({ ...node, id: normalizeId(node.id), filepath: normalizeId(node.filepath || node.id), dir: node.dir || dirname(node.id), name: node.name || basename(node.id) })),
+      edges: (data.edges || []).map((edge) => ({ ...edge, source: normalizeId(edge.source.id || edge.source), target: normalizeId(edge.target.id || edge.target), line: edge.line || null })),
+      cycles: (data.cycles || []).map((cycle) => cycle.map(normalizeId)),
+      waste: (data.waste || []).map((node) => ({ ...node, id: normalizeId(node.id) }))
+    };
+    APP.indexes = buildIndexes(APP.graph);
+    APP.graph.nodes = APP.graph.nodes.map((node) => ({ ...node, importance: APP.indexes.nodeById.get(node.id)?.importance || 0 }));
+    stopSimulation();
+    APP.layoutPositions = new Map();
+    APP.anchorPositions = new Map();
+    APP.dragOriginPositions = null;
+    const previousPerfMode = APP.state?.perfMode || 'auto';
+    APP.state = createDefaultState();
+    APP.state.perfMode = previousPerfMode;
+    APP.state.visibleClasses = new Set(DEFAULT_CLASSES);
+    APP.state.showLabels = true;
+    APP.state.showFullGraph = APP.graph.nodes.length <= 220;
+    applyLargeGraphDefaults();
+    ELS['search-input'].value = '';
+    ELS['drop-overlay'].classList.add('hidden');
+    updateUnsupportedBanner();
+    renderLanguageMenu();
+    renderFilterPanel();
+    updateStats();
+    updateLeftPanel();
+    updateInspector();
+    syncShellState();
+    requestLayout();
+    if ((APP.graph.summary?.cycle_count || 0) > 0 && options.source !== 'browser-analysis') toast(`Alert: ${APP.graph.summary.cycle_count} circular dependencies found!`);
+  }
+
+  function requestLayout() {
+    if (!APP.graph || !APP.indexes) return;
+    stopSimulation();
+    const { width, height } = getCanvasSize();
+    let cachedPositions = null;
+    try {
+      const raw = localStorage.getItem(cacheKey(APP.indexes.hash, APP.state.layoutMode));
+      if (raw) {
+        cachedPositions = JSON.parse(raw);
+        APP.layoutPositions = new Map(Object.entries(cachedPositions).map(([id, pos]) => [normalizeId(id), { x: pos.x, y: pos.y }]));
+        APP.anchorPositions = new Map([...APP.layoutPositions.entries()].map(([id, pos]) => [id, { x: pos.x, y: pos.y }]));
+        restartMotionSimulation();
+        scheduleRender();
+      }
+    } catch { }
+    APP.workerRequestId += 1;
+    showWorkerStatus('Laying out graph…', 12);
+    ensureWorker().postMessage({ type: 'layoutGraph', payload: { requestId: APP.workerRequestId, width, height, layoutMode: APP.state.layoutMode, nodes: APP.graph.nodes.map((node) => ({ id: node.id, dir: node.dir, classification: node.classification, depth: node.depth, importance: node.importance || 0 })), edges: APP.indexes.edges.map((edge) => ({ source: edge.source, target: edge.target })), cachedPositions } });
+  }
+
+  function stopSimulation() {
+    if (APP.simulation) {
+      APP.simulation.on('tick', null);
+      APP.simulation.stop();
+      APP.simulation = null;
+    }
+    APP.simNodeById = new Map();
+    APP.lastSimRenderAt = 0;
+  }
+
+  function updateMotionMode(nodeCount, edgeCount) {
+    const profile = getPerformanceProfile(nodeCount, edgeCount);
+    APP.motionEnabled = nodeCount <= profile.motionNodes && edgeCount <= profile.motionEdges;
+  }
+
+  function motionTickShouldRender() {
+    const now = performance.now();
+    if (!APP.lastSimRenderAt || now - APP.lastSimRenderAt >= PERF.simRenderIntervalMs) {
+      APP.lastSimRenderAt = now;
+      return true;
+    }
+    return false;
+  }
+
+  function restartMotionSimulation() {
+    stopSimulation();
+    if (!APP.graph || !APP.indexes || !APP.anchorPositions.size || !d3.forceSimulation) return;
+    const simNodes = APP.graph.nodes.filter(nodeVisible).map((node) => {
+      const pos = APP.layoutPositions.get(node.id) || APP.anchorPositions.get(node.id) || { x: 0, y: 0 };
+      return { ...node, x: pos.x, y: pos.y };
+    });
+    if (!simNodes.length) return;
+    const nodeIds = new Set(simNodes.map((node) => node.id));
+    const simEdges = APP.indexes.edges.filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target)).map((edge) => ({ source: edge.source, target: edge.target }));
+    APP.simNodeById = new Map(simNodes.map((node) => [node.id, node]));
+    updateMotionMode(simNodes.length, simEdges.length);
+    if (!APP.motionEnabled) return;
+    const linkDistance = APP.state.layoutMode === 'cluster' ? 86 : APP.state.layoutMode === 'radial' ? 96 : 104;
+    const linkStrength = APP.state.layoutMode === 'cluster' ? 0.2 : 0.15;
+    const anchorStrength = APP.state.layoutMode === 'cluster' ? 0.15 : APP.state.layoutMode === 'radial' ? 0.12 : 0.085;
+    const charge = APP.state.layoutMode === 'cluster' ? -180 : -235;
+    APP.simulation = d3.forceSimulation(simNodes)
+      .alpha(0.18)
+      .alphaDecay(0.065)
+      .velocityDecay(0.34)
+      .force('link', d3.forceLink(simEdges).id((node) => node.id).distance(linkDistance).strength(linkStrength))
+      .force('charge', d3.forceManyBody().strength(charge).distanceMax(520))
+      .force('collide', d3.forceCollide((node) => node.classification === 'ENTRY' ? 22 : 15).iterations(2))
+      .force('x', d3.forceX((node) => APP.anchorPositions.get(node.id)?.x ?? node.x).strength(anchorStrength))
+      .force('y', d3.forceY((node) => APP.anchorPositions.get(node.id)?.y ?? node.y).strength(anchorStrength))
+      .on('tick', () => {
+        simNodes.forEach((node) => {
+          APP.layoutPositions.set(node.id, { x: node.x, y: node.y });
+        });
+        if (motionTickShouldRender()) scheduleRender();
+        if (APP.simulation?.alpha() < 0.03) stopSimulation();
+      });
+  }
+
+  function scheduleRender() {
+    if (APP.pendingRender) return;
+    APP.pendingRender = requestAnimationFrame(() => {
+      APP.pendingRender = 0;
+      renderGraph();
+    });
+  }
+
+  function resizeCanvas() {
+    const { width, height } = getCanvasSize();
+    APP.dpr = Math.max(1, window.devicePixelRatio || 1);
+    APP.canvas.width = Math.round(width * APP.dpr);
+    APP.canvas.height = Math.round(height * APP.dpr);
+    APP.canvas.style.width = `${width}px`;
+    APP.canvas.style.height = `${height}px`;
+    APP.ctx.setTransform(APP.dpr, 0, 0, APP.dpr, 0, 0);
+    scheduleRender();
+  }
+
+  function getViewportBounds(pad = 80) {
+    const { width, height } = getCanvasSize();
+    const t = APP.state.zoom;
+    return { minX: (-t.x) / t.k - pad, minY: (-t.y) / t.k - pad, maxX: (width - t.x) / t.k + pad, maxY: (height - t.y) / t.k + pad };
+  }
+
+  function buildSearchTreeSet(matchIds, allowedIds) {
+    if (!matchIds.length) return new Set();
+    const seen = new Set(matchIds);
+    const queue = [...matchIds];
+    while (queue.length) {
+      const id = queue.shift();
+      (APP.indexes.neighborsByNode.get(id) || new Set()).forEach((next) => {
+        if (!allowedIds.has(next) || seen.has(next)) return;
+        seen.add(next);
+        queue.push(next);
+      });
+    }
+    return seen;
+  }
+
+  function buildFocusSet(selectedId, radius, allowedIds) {
+    if (!selectedId || radius <= 0) return null;
+    const seen = new Set([selectedId]);
+    let frontier = new Set([selectedId]);
+    for (let depth = 0; depth < radius; depth += 1) {
+      const next = new Set();
+      frontier.forEach((id) => {
+        (APP.indexes.neighborsByNode.get(id) || new Set()).forEach((neighbor) => {
+          if (!allowedIds.has(neighbor) || seen.has(neighbor)) return;
+          seen.add(neighbor);
+          next.add(neighbor);
+        });
+      });
+      frontier = next;
+      if (!frontier.size) break;
+    }
+    return seen;
+  }
+
+
+  function buildDragInfluence(rootId, maxDepth = 3) {
+    if (!rootId) return new Map();
+    const influence = new Map([[rootId, 1]]);
+    const queue = [{ id: rootId, depth: 0 }];
+    while (queue.length) {
+      const current = queue.shift();
+      if (current.depth >= maxDepth) continue;
+      (APP.indexes.neighborsByNode.get(current.id) || new Set()).forEach((neighbor) => {
+        if (influence.has(neighbor)) return;
+        const nextDepth = current.depth + 1;
+        const factor = nextDepth === 1 ? 0.22 : nextDepth === 2 ? 0.1 : 0.035;
+        influence.set(neighbor, factor);
+        queue.push({ id: neighbor, depth: nextDepth });
+      });
+    }
+    return influence;
+  }
+
+  function captureDragOrigins(influence) {
+    APP.dragOriginPositions = new Map();
+    (influence || new Map()).forEach((_factor, id) => {
+      const source = APP.anchorPositions.get(id) || APP.layoutPositions.get(id);
+      if (!source) return;
+      APP.dragOriginPositions.set(id, { x: source.x, y: source.y });
+    });
+  }
+
+  function applyDragPositions(rootId, pointerPos) {
+    if (!rootId || !APP.dragOriginPositions?.size) return;
+    const rootOrigin = APP.dragOriginPositions.get(rootId);
+    if (!rootOrigin) return;
+    const dx = pointerPos.x - rootOrigin.x;
+    const dy = pointerPos.y - rootOrigin.y;
+    APP.dragDelta = { x: dx, y: dy };
+    (APP.dragInfluence || new Map([[rootId, 1]])).forEach((factor, id) => {
+      const origin = APP.dragOriginPositions.get(id);
+      if (!origin) return;
+      if (id === rootId) {
+        APP.layoutPositions.set(id, { x: pointerPos.x, y: pointerPos.y });
+        return;
+      }
+      const targetX = origin.x + dx * factor;
+      const targetY = origin.y + dy * factor;
+      const current = APP.layoutPositions.get(id) || origin;
+      const follow = 0.28 + factor * 0.45;
+      APP.layoutPositions.set(id, {
+        x: current.x + (targetX - current.x) * follow,
+        y: current.y + (targetY - current.y) * follow
+      });
+    });
+  }
+
+  function animateDragSettle(rootId, influence) {
+    if (APP.dragReleaseFrame) cancelAnimationFrame(APP.dragReleaseFrame);
+    if (!rootId || !influence?.size) return;
+    const rootPos = APP.layoutPositions.get(rootId);
+    if (rootPos) APP.anchorPositions.set(rootId, { x: rootPos.x, y: rootPos.y });
+    let frame = 0;
+    const tick = () => {
+      frame += 1;
+      let moving = false;
+      influence.forEach((factor, id) => {
+        if (id === rootId) return;
+        const target = APP.anchorPositions.get(id);
+        const pos = APP.layoutPositions.get(id);
+        if (!target || !pos) return;
+        const stiffness = 0.26 + (1 - factor) * 0.18;
+        const nx = pos.x + (target.x - pos.x) * stiffness;
+        const ny = pos.y + (target.y - pos.y) * stiffness;
+        if (Math.abs(target.x - nx) > 0.2 || Math.abs(target.y - ny) > 0.2) moving = true;
+        APP.layoutPositions.set(id, { x: nx, y: ny });
+      });
+      scheduleRender();
+      if (moving && frame < 18) {
+        APP.dragReleaseFrame = requestAnimationFrame(tick);
+      } else {
+        influence.forEach((_factor, id) => {
+          if (id === rootId) return;
+          const target = APP.anchorPositions.get(id);
+          if (target) APP.layoutPositions.set(id, { x: target.x, y: target.y });
+        });
+        APP.dragReleaseFrame = 0;
+        scheduleRender();
+      }
+    };
+    APP.dragReleaseFrame = requestAnimationFrame(tick);
+  }
+
+  function nodePriority(node, selectedId, searchTree) {
+    let score = node.importance || 0;
+    if (node.id === selectedId) score += 1000;
+    if (searchTree?.has(node.id)) score += 500;
+    if (node.classification === 'ENTRY') score += 120;
+    if (APP.indexes.cycleMembershipByNode.has(node.id)) score += 90;
+    return score;
+  }
+
+  function capNodesForRender(nodes, selectedId, searchTree, zoomK) {
+    const profile = getPerformanceProfile(APP.graph?.nodes?.length || nodes.length, APP.graph?.edges?.length || 0);
+    const cap = zoomK < 0.45 ? profile.maxRenderNodesZoomedOut : zoomK < 1 ? profile.maxRenderNodesMidZoom : profile.maxRenderNodesZoomedIn;
+    if (nodes.length <= cap) return nodes;
+    return [...nodes]
+      .sort((a, b) => nodePriority(b, selectedId, searchTree) - nodePriority(a, selectedId, searchTree))
+      .slice(0, cap);
+  }
+
+  function edgePriority(edge, selectedId, searchTree) {
+    let score = 0;
+    if (selectedId && (edge.source === selectedId || edge.target === selectedId)) score += 1000;
+    if (searchTree && searchTree.has(edge.source) && searchTree.has(edge.target)) score += 500;
+    score += (APP.indexes.nodeById.get(edge.source)?.importance || 0) + (APP.indexes.nodeById.get(edge.target)?.importance || 0);
+    return score;
+  }
+
+  function capEdgesForRender(edges, selectedId, searchTree, dense) {
+    const profile = getPerformanceProfile(APP.graph?.nodes?.length || 0, APP.graph?.edges?.length || edges.length);
+    const cap = dense ? profile.maxRenderEdgesDense : profile.maxRenderEdgesNormal;
+    if (edges.length <= cap) return edges;
+    return [...edges]
+      .sort((a, b) => edgePriority(b, selectedId, searchTree) - edgePriority(a, selectedId, searchTree))
+      .slice(0, cap);
+  }
+
+  function withinViewport(node, bounds) {
+    const pos = APP.layoutPositions.get(node.id);
+    if (!pos) return false;
+    return pos.x >= bounds.minX && pos.x <= bounds.maxX && pos.y >= bounds.minY && pos.y <= bounds.maxY;
+  }
+
+  function segmentVisible(edge, bounds) {
+    const source = APP.layoutPositions.get(edge.source);
+    const target = APP.layoutPositions.get(edge.target);
+    if (!source || !target) return false;
+    if ((source.x >= bounds.minX && source.x <= bounds.maxX && source.y >= bounds.minY && source.y <= bounds.maxY) || (target.x >= bounds.minX && target.x <= bounds.maxX && target.y >= bounds.minY && target.y <= bounds.maxY)) return true;
+    const minX = Math.min(source.x, target.x);
+    const maxX = Math.max(source.x, target.x);
+    const minY = Math.min(source.y, target.y);
+    const maxY = Math.max(source.y, target.y);
+    return !(maxX < bounds.minX || minX > bounds.maxX || maxY < bounds.minY || minY > bounds.maxY);
+  }
+
+  function deriveRenderModel() {
+    if (!APP.graph || !APP.indexes) return null;
+    const baseNodes = APP.graph.nodes.filter(nodeVisible);
+    const baseIds = new Set(baseNodes.map((node) => node.id));
+    const matchedNodes = APP.state.searchQuery ? baseNodes.filter((node) => {
+      const search = APP.indexes.searchByNode.get(node.id);
+      const q = APP.state.searchQuery.toLowerCase();
+      return search.base.includes(q) || search.full.includes(q) || [...search.tokens].some((token) => token.includes(q));
+    }) : [];
+    const searchTree = APP.state.searchQuery ? buildSearchTreeSet(matchedNodes.map((node) => node.id), baseIds) : null;
+    const focusSet = buildFocusSet(APP.state.selectedId, APP.state.focusRadius, baseIds);
+    let workingNodes = focusSet ? baseNodes.filter((node) => focusSet.has(node.id)) : baseNodes;
+    const hugeGraph = baseNodes.length > 220;
+    const zoomK = APP.state.zoom.k;
+    let clusterOnly = false;
+    if (hugeGraph && !APP.state.showFullGraph && !APP.state.searchQuery && !APP.state.selectedId) {
+      if (zoomK < 0.38) {
+        clusterOnly = true;
+        workingNodes = workingNodes.filter((node) => node.importance >= 4 || node.classification === 'ENTRY' || APP.indexes.cycleMembershipByNode.has(node.id));
+      } else if (zoomK < 0.82) {
+        workingNodes = workingNodes.filter((node) => node.importance >= 2.8 || node.classification !== 'LEAF' || APP.indexes.cycleMembershipByNode.has(node.id));
+      }
+    }
+    const workingIds = new Set(workingNodes.map((node) => node.id));
+    const workingEdges = APP.indexes.edges.filter((edge) => workingIds.has(edge.source) && workingIds.has(edge.target));
+    const bounds = getViewportBounds();
+    let renderNodes = workingNodes.filter((node) => withinViewport(node, bounds) || node.id === APP.state.selectedId || (searchTree && searchTree.has(node.id)));
+    if (hugeGraph) renderNodes = capNodesForRender(renderNodes, APP.state.selectedId, searchTree, zoomK);
+    const renderIds = new Set(renderNodes.map((node) => node.id));
+    let renderEdges = workingEdges.filter((edge) => {
+      if (APP.state.selectedId && (edge.source === APP.state.selectedId || edge.target === APP.state.selectedId)) return true;
+      if (searchTree && searchTree.has(edge.source) && searchTree.has(edge.target)) return true;
+      return segmentVisible(edge, bounds) && renderIds.has(edge.source) && renderIds.has(edge.target);
+    });
+    let dense = renderNodes.length > 240 || renderEdges.length > 700;
+    if (hugeGraph || renderEdges.length > PERF.maxRenderEdgesNormal) renderEdges = capEdgesForRender(renderEdges, APP.state.selectedId, searchTree, dense);
+    dense = renderNodes.length > 240 || renderEdges.length > 700;
+    const showLabels = APP.state.showLabels && (zoomK > 0.62 || APP.state.selectedId || APP.state.searchQuery) && !(hugeGraph && zoomK < 0.52 && !APP.state.selectedId && !APP.state.searchQuery);
+    return { baseNodes, workingNodes, workingEdges, renderNodes, renderEdges, matchedNodes, searchTree, bounds, dense, showLabels, clusterOnly, hugeGraph, zoomK };
+  }
+
+  function toScreen(x, y) {
+    const t = APP.state.zoom;
+    return { x: x * t.k + t.x, y: y * t.k + t.y };
+  }
+
+  function drawRoundRect(ctx, x, y, width, height, radius, fill, stroke) {
+    ctx.beginPath();
+    ctx.moveTo(x + radius, y);
+    ctx.arcTo(x + width, y, x + width, y + height, radius);
+    ctx.arcTo(x + width, y + height, x, y + height, radius);
+    ctx.arcTo(x, y + height, x, y, radius);
+    ctx.arcTo(x, y, x + width, y, radius);
+    if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+    if (stroke) { ctx.strokeStyle = stroke; ctx.stroke(); }
+  }
+
+  function drawClusters(model) {
+    if (!model.workingNodes.length) return;
+    const groups = new Map();
+    model.workingNodes.forEach((node) => {
+      const pos = APP.layoutPositions.get(node.id);
+      if (!pos) return;
+      const key = dirname(node.id);
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push({ node, pos });
+    });
+    APP.ctx.save();
+    groups.forEach((items, dir) => {
+      if (items.length < 2) return;
+      const xs = items.map((item) => item.pos.x);
+      const ys = items.map((item) => item.pos.y);
+      const topLeft = toScreen(Math.min(...xs) - 26, Math.min(...ys) - 26);
+      const bottomRight = toScreen(Math.max(...xs) + 26, Math.max(...ys) + 26);
+      const width = bottomRight.x - topLeft.x;
+      const height = bottomRight.y - topLeft.y;
+      if (width < 18 || height < 18) return;
+      drawRoundRect(APP.ctx, topLeft.x, topLeft.y, width, height, 14, 'rgba(176,111,255,.045)', 'rgba(176,111,255,.18)');
+      APP.ctx.fillStyle = 'rgba(176,111,255,.78)';
+      APP.ctx.font = '10px JetBrains Mono';
+      APP.ctx.textBaseline = 'top';
+      APP.ctx.fillText(dir === '.' ? 'root' : basename(dir), topLeft.x + 12, topLeft.y + 10);
+    });
+    APP.ctx.restore();
+  }
+
+  function edgeStyle(edge, model) {
+    const selected = APP.state.selectedId;
+    const inCycle = APP.state.highlightCycles && APP.indexes.cycleMembershipByNode.has(edge.source) && APP.indexes.cycleMembershipByNode.has(edge.target);
+    if (selected && (edge.source === selected || edge.target === selected)) return { stroke: 'rgba(0,229,255,.95)', opacity: 1, width: 1.9, arrow: !model.dense };
+    if (inCycle) return { stroke: 'rgba(255,170,0,.92)', opacity: .95, width: 1.7, arrow: !model.dense };
+    if (model.searchTree && model.searchTree.has(edge.source) && model.searchTree.has(edge.target)) return { stroke: 'rgba(0,229,255,.5)', opacity: .45, width: 1.25, arrow: false };
+    if (selected) return { stroke: 'rgba(31,37,64,.55)', opacity: .08, width: 1, arrow: false };
+    if (APP.state.searchQuery) return { stroke: 'rgba(31,37,64,.55)', opacity: model.searchTree && model.searchTree.has(edge.source) && model.searchTree.has(edge.target) ? .4 : .05, width: 1, arrow: false };
+    return { stroke: 'rgba(31,37,64,.72)', opacity: 1, width: model.dense ? .8 : 1.1, arrow: !model.dense && model.zoomK > .75 && model.renderEdges.length < 220 };
+  }
+
+  function drawArrowhead(x1, y1, x2, y2, color) {
+    const angle = Math.atan2(y2 - y1, x2 - x1);
+    const size = 6;
+    APP.ctx.save();
+    APP.ctx.translate(x2, y2);
+    APP.ctx.rotate(angle);
+    APP.ctx.beginPath();
+    APP.ctx.moveTo(0, 0);
+    APP.ctx.lineTo(-size, -size * .5);
+    APP.ctx.lineTo(-size, size * .5);
+    APP.ctx.closePath();
+    APP.ctx.fillStyle = color;
+    APP.ctx.fill();
+    APP.ctx.restore();
+  }
+
+  function drawEdges(model) {
+    APP.ctx.save();
+    model.renderEdges.forEach((edge) => {
+      const source = APP.layoutPositions.get(edge.source);
+      const target = APP.layoutPositions.get(edge.target);
+      if (!source || !target) return;
+      const a = toScreen(source.x, source.y);
+      const b = toScreen(target.x, target.y);
+      const style = edgeStyle(edge, model);
+      APP.ctx.beginPath();
+      APP.ctx.moveTo(a.x, a.y);
+      APP.ctx.lineTo(b.x, b.y);
+      APP.ctx.strokeStyle = style.stroke;
+      APP.ctx.globalAlpha = style.opacity;
+      APP.ctx.lineWidth = style.width;
+      APP.ctx.stroke();
+      if (style.arrow) drawArrowhead(a.x, a.y, b.x, b.y, style.stroke);
+    });
+    APP.ctx.restore();
+  }
+
+  function nodeOpacity(node, model) {
+    if (APP.state.searchQuery) return model.searchTree && model.searchTree.has(node.id) ? 1 : .1;
+    return 1;
+  }
+
+  function drawNodes(model) {
+    APP.ctx.save();
+    model.renderNodes.forEach((node) => {
+      const pos = APP.layoutPositions.get(node.id);
+      if (!pos) return;
+      const screen = toScreen(pos.x, pos.y);
+      const theme = getTheme(node.classification);
+      const radius = node.classification === 'ENTRY' ? 10 : 7;
+      const halo = node.classification === 'ENTRY' ? 13 : 9;
+      const opacity = nodeOpacity(node, model);
+      APP.ctx.globalAlpha = opacity;
+      APP.ctx.beginPath();
+      APP.ctx.arc(screen.x, screen.y, radius, 0, Math.PI * 2);
+      APP.ctx.fillStyle = theme.fill;
+      APP.ctx.fill();
+      APP.ctx.beginPath();
+      APP.ctx.arc(screen.x, screen.y, halo, 0, Math.PI * 2);
+      APP.ctx.strokeStyle = getLangColor(node.language);
+      APP.ctx.lineWidth = .85;
+      APP.ctx.globalAlpha = opacity * .72;
+      APP.ctx.stroke();
+      APP.ctx.globalAlpha = opacity;
+      APP.ctx.beginPath();
+      APP.ctx.arc(screen.x, screen.y, radius + (node.id === APP.state.selectedId ? 3 : APP.state.highlightCycles && APP.indexes.cycleMembershipByNode.has(node.id) ? 2.5 : 1.4), 0, Math.PI * 2);
+      APP.ctx.strokeStyle = APP.indexes.cycleMembershipByNode.has(node.id) ? 'rgba(255,170,0,.95)' : theme.stroke;
+      APP.ctx.lineWidth = node.id === APP.state.selectedId ? 2.2 : APP.state.highlightCycles && APP.indexes.cycleMembershipByNode.has(node.id) ? 2 : 1.3;
+      APP.ctx.stroke();
+    });
+    APP.ctx.restore();
+  }
+
+  function shouldDrawLabel(node, model) {
+    if (!model.showLabels) return false;
+    if (node.id === APP.state.selectedId || node.id === APP.state.hoveredId) return true;
+    if (APP.state.searchQuery && model.searchTree?.has(node.id)) return true;
+    if (model.zoomK > 1.45) return true;
+    if (model.renderNodes.length < 120 && node.importance >= 2.5) return true;
+    return node.classification === 'ENTRY' || APP.indexes.cycleMembershipByNode.has(node.id);
+  }
+
+  function drawLabels(model) {
+    APP.ctx.save();
+    APP.ctx.font = '10px JetBrains Mono';
+    APP.ctx.textAlign = 'center';
+    APP.ctx.textBaseline = 'middle';
+    model.renderNodes.forEach((node) => {
+      if (!shouldDrawLabel(node, model)) return;
+      const pos = APP.layoutPositions.get(node.id);
+      if (!pos) return;
+      const screen = toScreen(pos.x, pos.y);
+      const label = node.name || basename(node.id);
+      const width = APP.ctx.measureText(label).width + 12;
+      const height = 16;
+      const x = screen.x - width / 2;
+      const y = screen.y - 26;
+      APP.ctx.globalAlpha = nodeOpacity(node, model);
+      drawRoundRect(APP.ctx, x, y, width, height, 4, 'rgba(6,11,24,.9)', 'rgba(18,29,58,.62)');
+      APP.ctx.fillStyle = node.id === APP.state.selectedId ? '#ffffff' : 'rgba(188,200,232,.92)';
+      APP.ctx.fillText(label, screen.x, y + height / 2 + .2);
+    });
+    APP.ctx.restore();
+  }
+
+  function updateSearchStatus(model = APP.renderModel) {
+    if (!model || !APP.state.searchQuery) { ELS['search-status'].textContent = ''; return; }
+    ELS['search-status'].textContent = model.matchedNodes.length ? `${model.matchedNodes.length} match${model.matchedNodes.length !== 1 ? 'es' : ''} • dependency tree highlighted` : 'No matches';
+  }
+
+  function updateMinimap() {
+    const canvas = ELS['minimap'];
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = 'rgba(7,9,18,.94)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    if (!APP.layoutPositions.size || !APP.graph) return;
+    const positions = [...APP.layoutPositions.values()];
+    const xs = positions.map((p) => p.x), ys = positions.map((p) => p.y);
+    const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+    const graphW = Math.max(1, maxX - minX), graphH = Math.max(1, maxY - minY), pad = 10;
+    const scale = Math.min((canvas.width - pad * 2) / graphW, (canvas.height - pad * 2) / graphH);
+    const mapX = (x) => pad + (x - minX) * scale;
+    const mapY = (y) => pad + (y - minY) * scale;
+    ctx.strokeStyle = 'rgba(31,37,64,.8)';
+    ctx.lineWidth = 1;
+    const profile = getPerformanceProfile(APP.graph.nodes.length, APP.graph.edges.length);
+    const minimapEdges = APP.indexes.edges.length > profile.maxMinimapEdges
+      ? APP.indexes.edges.filter((_edge, index) => index % Math.ceil(APP.indexes.edges.length / profile.maxMinimapEdges) === 0)
+      : APP.indexes.edges;
+    minimapEdges.forEach((edge) => {
+      const s = APP.layoutPositions.get(edge.source);
+      const t = APP.layoutPositions.get(edge.target);
+      if (!s || !t) return;
+      ctx.beginPath();
+      ctx.moveTo(mapX(s.x), mapY(s.y));
+      ctx.lineTo(mapX(t.x), mapY(t.y));
+      ctx.stroke();
+    });
+    const minimapNodes = APP.graph.nodes.length > profile.maxMinimapNodes
+      ? [...APP.graph.nodes].sort((a, b) => ((APP.indexes.nodeById.get(b.id)?.importance || b.importance || 0) - (APP.indexes.nodeById.get(a.id)?.importance || a.importance || 0))).slice(0, profile.maxMinimapNodes)
+      : APP.graph.nodes;
+    minimapNodes.forEach((node) => {
+      const pos = APP.layoutPositions.get(node.id);
+      if (!pos) return;
+      ctx.fillStyle = getTheme(node.classification).stroke;
+      ctx.beginPath();
+      ctx.arc(mapX(pos.x), mapY(pos.y), node.classification === 'ENTRY' ? 3 : 2, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    const { width, height } = getCanvasSize();
+    const t = APP.state.zoom;
+    const vx1 = (-t.x) / t.k, vy1 = (-t.y) / t.k, vx2 = (width - t.x) / t.k, vy2 = (height - t.y) / t.k;
+    ctx.fillStyle = 'rgba(0,229,255,.08)';
+    ctx.strokeStyle = 'rgba(0,229,255,.72)';
+    ctx.fillRect(mapX(vx1), mapY(vy1), Math.max(8, (vx2 - vx1) * scale), Math.max(8, (vy2 - vy1) * scale));
+    ctx.strokeRect(mapX(vx1), mapY(vy1), Math.max(8, (vx2 - vx1) * scale), Math.max(8, (vy2 - vy1) * scale));
+  }
+
+  function renderGraph() {
+    if (!APP.graph || !APP.indexes) { APP.ctx.clearRect(0, 0, APP.canvas.width, APP.canvas.height); return; }
+    APP.renderModel = deriveRenderModel();
+    APP.ctx.save();
+    APP.ctx.setTransform(APP.dpr, 0, 0, APP.dpr, 0, 0);
+    APP.ctx.clearRect(0, 0, APP.canvas.width, APP.canvas.height);
+    if (!APP.layoutPositions.size) { APP.ctx.restore(); return; }
+    if (APP.state.layoutMode === 'cluster' || APP.renderModel.clusterOnly) drawClusters(APP.renderModel);
+    drawEdges(APP.renderModel);
+    drawNodes(APP.renderModel);
+    drawLabels(APP.renderModel);
+    APP.ctx.restore();
+    updateMinimap();
+    updateSearchStatus();
+  }
+
+  function renderLanguageMenu() {
+    const grid = ELS['lang-chip-grid'];
+    if (!APP.graph) { grid.innerHTML = ''; ELS['btn-lang'].textContent = 'languages'; return; }
+    const counts = {};
+    APP.graph.nodes.forEach((node) => { if (node.language) counts[node.language] = (counts[node.language] || 0) + 1; });
+    const active = currentLanguageSet();
+    const langs = [...APP.indexes.allLanguages].sort();
+    grid.innerHTML = langs.map((lang) => `<button class="toggle-chip ${active.has(lang) ? 'on' : ''}" data-lang="${escapeHtml(lang)}" style="color:${getLangColor(lang)};border-color:${active.has(lang) ? getLangColor(lang) : ''}">${escapeHtml(displayLang(lang))} <span style="opacity:.6;font-size:8px">(${counts[lang] || 0})</span></button>`).join('');
+    grid.querySelectorAll('[data-lang]').forEach((el) => el.addEventListener('click', () => toggleLanguage(el.dataset.lang)));
+    const total = APP.indexes.allLanguages.size;
+    const activeCount = active.size;
+    ELS['btn-lang'].textContent = activeCount === total ? 'languages' : `languages ${activeCount}/${total}`;
+    ELS['btn-lang'].classList.toggle('on', activeCount !== total);
+  }
+
+  function renderFilterPanel() {
+    const grid = ELS['filter-chip-grid'];
+    grid.innerHTML = DEFAULT_CLASSES.map((cls) => `<button class="toggle-chip ${APP.state.visibleClasses.has(cls) ? 'on' : ''}" data-cls="${cls}" style="color:${getTheme(cls).stroke};border-color:${APP.state.visibleClasses.has(cls) ? getTheme(cls).stroke : ''}">${cls.toLowerCase()}</button>`).join('');
+    grid.querySelectorAll('[data-cls]').forEach((el) => el.addEventListener('click', () => {
+      const cls = el.dataset.cls;
+      const next = new Set(APP.state.visibleClasses);
+      if (next.has(cls)) next.delete(cls); else next.add(cls);
+      setVisibleClasses(next);
+    }));
+    ELS['btn-filter'].classList.toggle('on', APP.state.visibleClasses.size !== DEFAULT_CLASSES.length);
+  }
+
+  function updateUnsupportedBanner() {
+    const items = APP.graph?.meta?.unsupported_languages || [];
+    if (!items.length || APP.state.dismissedWarning) { ELS['warning-banner'].classList.remove('show'); return; }
+    const pkgs = new Set();
+    items.forEach((item) => (PKG_HINTS[item.language] || []).forEach((pkg) => pkgs.add(pkg)));
+    ELS['warning-copy'].innerHTML = `<strong>Warning</strong> ${items.map((item) => `${displayLang(item.language)} parser unavailable - ${item.files} files were not analysed`).join(' • ')}. Run: <code>pip install ${[...pkgs].join(' ')}</code>`;
+    ELS['warning-banner'].classList.add('show');
+  }
+
+  function updateStats() {
+    if (!APP.graph) return;
+    const s = APP.graph.summary || {};
+    const imp = APP.graph.meta?.import_stats || {};
+    const totalImports = Object.values(imp).reduce((sum, value) => sum + value, 0);
+    const resolvedPct = totalImports ? Math.round(((imp.local || 0) / totalImports) * 100) : 0;
+    ELS['s-files'].textContent = APP.graph.nodes.length;
+    ELS['s-edges'].textContent = APP.graph.edges.length;
+    ELS['s-orphans'].textContent = (APP.graph.waste || []).length;
+    ELS['s-cycles'].textContent = s.cycle_count || 0;
+    ELS['s-health'].textContent = s.health_score ?? '—';
+    ELS['s-unreachable'].textContent = s.unreachable ?? 0;
+    ELS['s-max-depth'].textContent = s.max_depth ?? 0;
+    ELS['s-langs'].textContent = APP.indexes.allLanguages.size;
+    ELS['s-resolved'].textContent = `${resolvedPct}%`;
+    ELS['s-resolved'].style.color = resolvedPct > 80 ? 'var(--green)' : resolvedPct > 50 ? 'var(--amber)' : 'var(--red)';
+    ELS['health-pill'].querySelector('span').textContent = s.health_score ?? '—';
+    ELS['health-pill'].classList.remove('hidden');
+    ELS['elapsed'].textContent = APP.graph.meta?.elapsed_s ? `Analysed in ${APP.graph.meta.elapsed_s}s` : '';
+    updatePerformanceControls();
+  }
+
+  function renderChips(el, edges, dir) {
+    if (!edges.length) { el.innerHTML = '<div style="color:var(--dim);font-size:10px">None</div>'; return; }
+    el.innerHTML = `<div class="chip-cont">${edges.map((edge) => { const id = dir === 'in' ? edge.source : edge.target; const line = edge.line ? `:${edge.line}` : ''; return `<div class="chip ${dir}" data-focus="${escapeHtml(id)}" title="${escapeHtml(id + line)}">${escapeHtml(basename(id))}${line}</div>`; }).join('')}</div>`;
+    el.querySelectorAll('[data-focus]').forEach((chip) => chip.addEventListener('click', () => focusNode(chip.dataset.focus)));
+  }
+
+  function itemRow(node, color) {
+    const id = escapeHtml(normalizeId(node.id));
+    return `<div class="list-item" data-id="${id}"><div class="item-dot" style="background:${color}"></div><div class="item-info"><div class="item-name">${escapeHtml(basename(node.id))}</div><div class="item-path">${escapeHtml(dirname(node.id))}</div></div><div class="item-actions"><button class="item-btn" data-open="${id}">open</button><button class="item-btn" data-intentional="${id}">keep</button><button class="item-btn" data-delete="${id}">del</button></div></div>`;
+  }
+
+  function bindRowClicks(container) {
+    container.querySelectorAll('.list-item').forEach((el) => el.addEventListener('click', (event) => {
+      if (event.target.closest('[data-open],[data-delete],[data-intentional]')) return;
+      focusNode(el.dataset.id);
+    }));
+    container.querySelectorAll('[data-open]').forEach((el) => el.addEventListener('click', (event) => { event.stopPropagation(); openNodeFile(el.dataset.open).catch((err) => toast(err.message)); }));
+    container.querySelectorAll('[data-delete]').forEach((el) => el.addEventListener('click', (event) => { event.stopPropagation(); deleteNodeFile(el.dataset.delete).catch((err) => toast(err.message)); }));
+    container.querySelectorAll('[data-intentional]').forEach((el) => el.addEventListener('click', (event) => { event.stopPropagation(); markIntentional(el.dataset.intentional, true).catch((err) => toast(err.message)); }));
+  }
+
+  function renderWaste() {
+    if (!APP.graph) return;
+    const waste = (APP.graph.waste || []).map((item) => APP.indexes.nodeById.get(normalizeId(item.id)) || item).filter((node) => nodeVisible(node));
+    ELS['waste-badge'].textContent = waste.length;
+    ELS['waste-badge'].className = `badge${waste.length === 0 ? ' ok' : ''}`;
+    if (!waste.length) { ELS['waste-list'].innerHTML = '<div style="padding:40px;text-align:center;color:var(--green);font-size:11px">✓ Clean codebase</div>'; return; }
+    let html = '';
+    const islands = waste.filter((item) => item.classification === 'ISLAND');
+    const orphans = waste.filter((item) => item.classification === 'ORPHAN');
+    if (islands.length) {
+      const groups = {};
+      islands.forEach((item) => { const key = item.island_id >= 0 ? item.island_id : 'x'; (groups[key] = groups[key] || []).push(item); });
+      Object.entries(groups).forEach(([id, items]) => { html += `<div class="list-label">Isolated Cluster ${parseInt(id, 10) + 1}</div>`; items.forEach((item) => { html += itemRow(item, 'var(--purple)'); }); });
+    }
+    if (orphans.length) { html += '<div class="list-label">Orphan Files</div>'; orphans.forEach((item) => { html += itemRow(item, 'var(--red)'); }); }
+    ELS['waste-list'].innerHTML = html;
+    bindRowClicks(ELS['waste-list']);
+    syncActiveListRows();
+  }
+
+  function renderCycles() {
+    if (!APP.graph) return;
+    const cycles = (APP.graph.cycles || []).filter((cycle) => cycle.every((id) => { const node = APP.indexes.nodeById.get(normalizeId(id)); return node ? nodeVisible(node) : false; }));
+    ELS['cycle-badge'].textContent = cycles.length;
+    ELS['cycle-badge'].className = `badge${cycles.length === 0 ? ' ok' : ''}`;
+    ELS['btn-cycle-highlight'].classList.toggle('on', APP.state.highlightCycles);
+    if (!cycles.length) { ELS['cycle-list'].innerHTML = '<div style="padding:40px;text-align:center;color:var(--green);font-size:11px">✓ No cycles detected</div>'; return; }
+    ELS['cycle-list'].innerHTML = cycles.map((cycle, index) => `<div class="cycle-item"><div class="cycle-title">Cycle ${index + 1}</div><div class="cycle-path">${cycle.map((id, idx) => `${idx ? '<span class="cycle-arrow">→</span>' : ''}<button class="cycle-node" data-focus="${escapeHtml(normalizeId(id))}">${escapeHtml(basename(id))}</button>`).join('')}</div></div>`).join('');
+    ELS['cycle-list'].querySelectorAll('[data-focus]').forEach((el) => el.addEventListener('click', () => focusNode(el.dataset.focus)));
+  }
+
+  async function apiPost(route, payload) {
+    const response = await fetch(route, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}) });
+    const data = await response.json();
+    if (!response.ok || data.ok === false) throw new Error(data.error || `Request failed: ${route}`);
+    return data;
+  }
+  async function fetchNodeInfo(id) {
+    const response = await fetch(`/api/node-info?id=${encodeURIComponent(id)}`);
+    const data = await response.json();
+    if (!response.ok || data.ok === false) throw new Error(data.error || 'Node info unavailable');
+    return data;
+  }
+  async function openNodeFile(id) { await apiPost('/api/open-file', { id }); toast('Opened file'); }
+  async function deleteNodeFile(id) { if (!confirm(`Delete ${id}?`)) return; const data = await apiPost('/api/delete-file', { id }); setGraphData(data.graph); toast('File deleted'); }
+  async function markIntentional(id, intentional = true) { const data = await apiPost('/api/mark-intentional', { id, intentional }); setGraphData(data.graph); toast(intentional ? 'Marked intentional' : 'Removed intentional mark'); }
+
+  function updateInspector() {
+    if (!APP.graph || !APP.state.selectedId) {
+      ELS.ip.style.display = 'block';
+      ELS.ic.style.display = 'none';
+      ELS.ihistory.innerHTML = '<div style="color:var(--dim);font-size:10px">No node selected</div>';
+      ELS.icycle.innerHTML = '<div style="color:var(--dim);font-size:10px">No cycle selected</div>';
+      renderChips(ELS.iout, [], 'out');
+      renderChips(ELS.iin, [], 'in');
+      syncActiveListRows();
+      return;
+    }
+    const node = APP.indexes.nodeById.get(APP.state.selectedId);
+    if (!node) { clearSelection(); return; }
+    const inEdges = APP.indexes.inboundByNode.get(node.id) || [];
+    const outEdges = APP.indexes.outboundByNode.get(node.id) || [];
+    ELS.ip.style.display = 'none';
+    ELS.ic.style.display = 'block';
+    ELS.iname.textContent = normalizeId(node.filepath || node.id);
+    const island = node.island_id >= 0 ? `<span class="v" style="color:var(--purple)">Cluster ${node.island_id + 1}</span>` : '<span class="v">—</span>';
+    ELS.imeta.innerHTML = `<div class="kv-row"><span class="k">Class</span><span class="v" style="color:${getTheme(node.classification).stroke}">${escapeHtml(node.classification)}</span></div><div class="kv-row"><span class="k">Size</span><span class="v">${formatSize(node.size)}</span></div><div class="kv-row"><span class="k">Inbound</span><span class="v">${inEdges.length}</span></div><div class="kv-row"><span class="k">Outbound</span><span class="v">${outEdges.length}</span></div><div class="kv-row"><span class="k">Language</span><span class="v" style="color:${getLangColor(node.language)}">${escapeHtml(node.language || '—')}</span></div><div class="kv-row"><span class="k">Depth</span><span class="v">${node.depth >= 0 ? node.depth : '∞'}</span></div><div class="kv-row"><span class="k">Island</span>${island}</div><div class="kv-row"><span class="k">Modified</span><span class="v">${formatDate(node.mtime)}</span></div>`;
+    const cycles = APP.indexes.cycleMembershipByNode.get(node.id) || [];
+    ELS.icycle.innerHTML = cycles.length ? cycles.map((entry) => `<div class="chip-cont"><div style="font-size:9px;color:var(--amber);letter-spacing:.12em;text-transform:uppercase">Cycle ${entry.index + 1}</div><div class="cycle-path">${entry.path.map((id, idx) => `${idx ? '<span class="cycle-arrow">→</span>' : ''}<span class="chip cycle" data-focus="${escapeHtml(id)}">${escapeHtml(basename(id))}</span>`).join('')}</div></div>`).join('') : '<div style="color:var(--dim);font-size:10px">This node is not part of a cycle.</div>';
+    ELS.icycle.querySelectorAll('[data-focus]').forEach((chip) => chip.addEventListener('click', () => focusNode(chip.dataset.focus)));
+    renderChips(ELS.iout, outEdges, 'out');
+    renderChips(ELS.iin, inEdges, 'in');
+    ELS.ihistory.innerHTML = '<div style="color:var(--dim);font-size:10px">Loading git history…</div>';
+    fetchNodeInfo(node.id).then((info) => {
+      ELS.ihistory.innerHTML = `<div class="kv-row"><span class="k">Modified</span><span class="v">${escapeHtml(info.mtime_iso ? new Date(info.mtime_iso).toLocaleString() : formatDate(node.mtime))}</span></div><div style="margin-top:8px;font-size:10px;line-height:1.6;color:var(--text)"><span style="color:var(--muted);text-transform:uppercase;letter-spacing:.12em">Blame</span><br>${escapeHtml(info.blame?.summary || 'Unavailable')}</div>`;
+    }).catch((err) => {
+      ELS.ihistory.innerHTML = `<div style="color:var(--dim);font-size:10px">${escapeHtml(err.message)}</div>`;
+    });
+    syncActiveListRows();
+  }
+
+  function syncActiveListRows() { document.querySelectorAll('.list-item').forEach((item) => item.classList.toggle('active', normalizeId(item.dataset.id) === APP.state.selectedId)); }
+  function setSelection(id) { APP.state.selectedId = id ? normalizeId(id) : null; updateInspector(); scheduleRender(); }
+  function clearSelection() { setSelection(null); }
+
+  function focusNode(id) {
+    const nid = normalizeId(id);
+    const pos = APP.layoutPositions.get(nid);
+    if (!pos || !APP.zoomBehavior) { setSelection(nid); return; }
+    const { width, height } = getCanvasSize();
+    d3.select(APP.canvas).transition().duration(500).call(APP.zoomBehavior.transform, d3.zoomIdentity.translate(width / 2, height / 2).scale(Math.max(APP.state.zoom.k, 1.6)).translate(-pos.x, -pos.y));
+    setSelection(nid);
+  }
+
+  function setSearch(query) { APP.state.searchQuery = query.trim(); scheduleRender(); }
+
+  function setVisibleClasses(nextSet) {
+    APP.state.visibleClasses = nextSet;
+    const selectedNode = APP.state.selectedId ? APP.indexes.nodeById.get(APP.state.selectedId) : null;
+    if (selectedNode && !nodeVisible(selectedNode)) APP.state.selectedId = null;
+    renderFilterPanel();
+    renderWaste();
+    renderCycles();
+    updateInspector();
+    restartMotionSimulation();
+    scheduleRender();
+  }
+
+  function toggleLanguage(lang) {
+    const total = APP.indexes.allLanguages;
+    const next = APP.state.activeLangs === null ? new Set(total) : new Set(APP.state.activeLangs);
+    if (next.has(lang)) next.delete(lang); else next.add(lang);
+    APP.state.activeLangs = setEquals(next, total) ? null : next;
+    const selectedNode = APP.state.selectedId ? APP.indexes.nodeById.get(APP.state.selectedId) : null;
+    if (selectedNode && !nodeVisible(selectedNode)) APP.state.selectedId = null;
+    renderLanguageMenu();
+    renderWaste();
+    renderCycles();
+    updateInspector();
+    restartMotionSimulation();
+    scheduleRender();
+  }
+
+  function setLeftPanel(panelId) { APP.state.leftPanel = panelId; updateLeftPanel(); }
+
+  function updateLeftPanel() {
+    document.querySelectorAll('.left-tab').forEach((tab) => tab.classList.toggle('active', tab.dataset.leftPanel === APP.state.leftPanel));
+    $('waste-panel').classList.toggle('left-panel-hidden', APP.state.leftPanel !== 'waste-panel');
+    $('cycles-panel').classList.toggle('left-panel-hidden', APP.state.leftPanel !== 'cycles-panel');
+    renderWaste();
+    renderCycles();
+  }
+
+  function performanceLabel() {
+    const mode = APP.state.perfMode || 'auto';
+    return mode === 'quality' ? 'perf full' : mode === 'safe' ? 'perf safe' : 'perf auto';
+  }
+
+  function performanceBadgeText() {
+    const mode = (APP.state.perfMode || 'auto').toUpperCase();
+    return APP.motionEnabled ? `Perf ${mode}` : `Perf ${mode} � STATIC`;
+  }
+
+  function updatePerformanceControls() {
+    ELS['btn-perf'].textContent = performanceLabel();
+    ELS['btn-perf'].classList.toggle('on', APP.state.perfMode !== 'auto' || !APP.motionEnabled);
+    ELS['perf-mode'].textContent = performanceBadgeText();
+  }
+
+  function cyclePerformanceMode() {
+    APP.state.perfMode = APP.state.perfMode === 'auto' ? 'quality' : APP.state.perfMode === 'quality' ? 'safe' : 'auto';
+    if (APP.graph) {
+      if (APP.state.perfMode === 'auto') applyLargeGraphDefaults();
+      restartMotionSimulation();
+      scheduleRender();
+    }
+    updatePerformanceControls();
+  }
+
+  function updateLayoutControls() {
+    ELS['layout-force'].classList.toggle('on', APP.state.layoutMode === 'force');
+    ELS['layout-cluster'].classList.toggle('on', APP.state.layoutMode === 'cluster');
+    ELS['layout-radial'].classList.toggle('on', APP.state.layoutMode === 'radial');
+    ELS['btn-cluster'].classList.toggle('on', APP.state.layoutMode !== 'force' || ELS['layout-menu'].classList.contains('open'));
+    ELS['btn-focus'].textContent = APP.state.focusRadius === 0 ? 'focus off' : `focus r${APP.state.focusRadius}`;
+    ELS['btn-focus'].classList.toggle('on', APP.state.focusRadius > 0);
+    ELS['btn-full'].classList.toggle('on', APP.state.showFullGraph);
+    ELS['btn-full'].textContent = APP.state.showFullGraph ? 'full on' : 'full off';
+    updatePerformanceControls();
+  }
+
+  function syncShellState() {
+    ELS['left-rail'].classList.remove('collapsed');
+    ELS['inspector'].classList.remove('collapsed');
+    ELS['btn-waste'].classList.add('on');
+    ELS['btn-cycles'].classList.add('on');
+    ELS['btn-insp'].classList.add('on');
+    ELS['btn-labels'].classList.toggle('on', APP.state.showLabels);
+    updateLeftPanel();
+    updateLayoutControls();
+    updatePerformanceControls();
+  }
+
+  function setLayoutMode(mode) {
+    if (APP.state.layoutMode === mode) return;
+    APP.state.layoutMode = mode;
+    updateLayoutControls();
+    requestLayout();
+  }
+
+  function cycleFocusRadius() {
+    APP.state.focusRadius = (APP.state.focusRadius + 1) % 3;
+    updateLayoutControls();
+    scheduleRender();
+  }
+
+  function toggleFullGraph() {
+    APP.state.showFullGraph = !APP.state.showFullGraph;
+    updateLayoutControls();
+    scheduleRender();
+  }
+
+  async function walkDirectory(handle, prefix, files) {
+    for await (const [name, entry] of handle.entries()) {
+      if (entry.kind === 'directory') {
+        if (['.git', 'node_modules', '.venv', '__pycache__', '.pytest_cache', '.mypy_cache', 'dist', 'build', 'target'].includes(name)) continue;
+        await walkDirectory(entry, prefix ? `${prefix}/${name}` : name, files);
+      } else if (entry.kind === 'file') {
+        const path = prefix ? `${prefix}/${name}` : name;
+        if (/\.(json|py|js|jsx|ts|tsx|go|c|h|cc|cpp|cxx|hpp|hh|java|kt|kts)$/i.test(path)) {
+          const file = await entry.getFile();
+          if (file.size > 2 * 1024 * 1024) continue;
+          files.push({ path, text: await file.text(), size: file.size, mtime: Math.floor(file.lastModified / 1000) });
+        }
+      }
+    }
+  }
+
+  function openFolder() {
+    if (!window.showDirectoryPicker) { toast('Folder loading requires a Chromium-based browser'); return Promise.resolve(); }
+    return window.showDirectoryPicker().then(async (handle) => {
+      const files = [];
+      showWorkerStatus('Reading files…', 6);
+      await walkDirectory(handle, '', files);
+      showWorkerStatus(`Analyzing ${files.length} files…`, 10);
+      ensureWorker().postMessage({ type: 'analyzeProject', payload: { files, rootName: handle.name || 'workspace' } });
+    });
+  }
+
+  function loadFile(file) {
+    if (!file || !file.name.endsWith('.json')) { toast('Please select a valid graph.json'); return; }
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try { setGraphData(JSON.parse(event.target.result), { source: 'file' }); toast('Graph loaded successfully'); }
+      catch { toast('Error parsing JSON'); }
+    };
+    reader.readAsText(file);
+  }
+
+  function findNodeAtPointer(event) {
+    if (!APP.renderModel) return null;
+    const rect = APP.canvas.getBoundingClientRect();
+    const px = event.clientX - rect.left;
+    const py = event.clientY - rect.top;
+    const t = APP.state.zoom;
+    const worldX = (px - t.x) / t.k;
+    const worldY = (py - t.y) / t.k;
+    let best = null;
+    let bestDist = Infinity;
+    APP.renderModel.renderNodes.forEach((node) => {
+      const pos = APP.layoutPositions.get(node.id);
+      if (!pos) return;
+      const r = (node.classification === 'ENTRY' ? 10 : 7) + 6 / t.k;
+      const dx = worldX - pos.x;
+      const dy = worldY - pos.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist <= r && dist < bestDist) { best = node; bestDist = dist; }
+    });
+    return best;
+  }
+
+  function bindCanvasInteractions() {
+    APP.zoomBehavior = d3.zoom()
+      .scaleExtent([.08, 8])
+      .filter((event) => {
+        if (event.type === 'mousedown') return !findNodeAtPointer(event);
+        return !event.button;
+      })
+      .on('zoom', (event) => { APP.state.zoom = event.transform; scheduleRender(); });
+    d3.select(APP.canvas).call(APP.zoomBehavior);
+    APP.canvas.addEventListener('mousemove', (event) => {
+      const hit = findNodeAtPointer(event);
+      APP.state.hoveredId = hit ? hit.id : null;
+      APP.canvas.style.cursor = hit ? 'pointer' : 'grab';
+      if (APP.draggingNodeId && APP.layoutPositions.has(APP.draggingNodeId)) {
+        const rect = APP.canvas.getBoundingClientRect();
+        const px = event.clientX - rect.left;
+        const py = event.clientY - rect.top;
+        const nextPos = { x: (px - APP.state.zoom.x) / APP.state.zoom.k, y: (py - APP.state.zoom.y) / APP.state.zoom.k };
+        const simNode = APP.simNodeById.get(APP.draggingNodeId);
+        if (APP.motionEnabled && simNode && APP.simulation) {
+          simNode.fx = nextPos.x;
+          simNode.fy = nextPos.y;
+          APP.layoutPositions.set(APP.draggingNodeId, { x: nextPos.x, y: nextPos.y });
+          APP.simulation.alphaTarget(0.24).restart();
+        } else {
+          if (APP.dragReleaseFrame) {
+            cancelAnimationFrame(APP.dragReleaseFrame);
+            APP.dragReleaseFrame = 0;
+          }
+          applyDragPositions(APP.draggingNodeId, nextPos);
+        }
+        APP.dragMoved = true;
+      }
+      scheduleRender();
+    });
+    APP.canvas.addEventListener('mousedown', (event) => {
+      const hit = findNodeAtPointer(event);
+      if (hit) {
+        if (APP.dragReleaseFrame) {
+          cancelAnimationFrame(APP.dragReleaseFrame);
+          APP.dragReleaseFrame = 0;
+        }
+        APP.draggingNodeId = hit.id;
+        APP.dragInfluence = buildDragInfluence(hit.id);
+        captureDragOrigins(APP.dragInfluence);
+        APP.dragDelta = { x: 0, y: 0 };
+        APP.dragMoved = false;
+        const simNode = APP.simNodeById.get(hit.id);
+        if (APP.motionEnabled && simNode && APP.simulation) {
+          simNode.fx = simNode.x;
+          simNode.fy = simNode.y;
+          APP.simulation.alphaTarget(0.24).restart();
+        }
+      }
+    });
+    window.addEventListener('mouseup', () => {
+      if (APP.draggingNodeId) {
+        if (APP.motionEnabled) {
+          const simNode = APP.simNodeById.get(APP.draggingNodeId);
+          if (simNode) {
+            simNode.fx = null;
+            simNode.fy = null;
+          }
+          if (APP.simulation) APP.simulation.alphaTarget(0);
+        } else if (APP.dragInfluence && APP.dragMoved) {
+          animateDragSettle(APP.draggingNodeId, APP.dragInfluence);
+        }
+      }
+      APP.draggingNodeId = null;
+      APP.dragInfluence = null;
+      APP.dragOriginPositions = null;
+      APP.dragDelta = { x: 0, y: 0 };
+      APP.dragMoved = false;
+    });
+    APP.canvas.addEventListener('click', (event) => {
+      const hit = findNodeAtPointer(event);
+      if (APP.dragMoved) return;
+      if (hit) setSelection(hit.id); else clearSelection();
+    });
+  }
+
+  function toast(message) {
+    ELS.toast.textContent = message;
+    ELS.toast.classList.add('show');
+    clearTimeout(toast._timer);
+    toast._timer = setTimeout(() => ELS.toast.classList.remove('show'), 2600);
+  }
+
+  function toggleSearch(open = true) {
+    ELS['search-box'].classList.toggle('open', open);
+    if (open) { ELS['search-input'].focus(); ELS['search-input'].select(); }
+  }
+
+  function focusFirstSearchMatch() {
+    if (!APP.renderModel?.matchedNodes?.length) return;
+    focusNode(APP.renderModel.matchedNodes[0].id);
+  }
+
+  function clearSearch(hide = false) {
+    ELS['search-input'].value = '';
+    setSearch('');
+    if (hide) ELS['search-box'].classList.remove('open');
+  }
+
+  function wireUi() {
+    ELS['btn-folder'].onclick = () => openFolder().catch((err) => toast(err.message || String(err)));
+    ELS['btn-open'].onclick = () => ELS['file-input'].click();
+    ELS['file-input'].onchange = (event) => loadFile(event.target.files[0]);
+    document.addEventListener('dragover', (event) => event.preventDefault());
+    document.addEventListener('drop', (event) => { event.preventDefault(); loadFile(event.dataTransfer.files[0]); });
+    ELS['btn-waste'].onclick = function () { ELS['left-rail'].classList.toggle('collapsed'); this.classList.toggle('on'); setTimeout(scheduleRender, 320); };
+    ELS['btn-cycles'].onclick = function () { ELS['left-rail'].classList.remove('collapsed'); ELS['btn-waste'].classList.add('on'); setLeftPanel('cycles-panel'); setTimeout(scheduleRender, 320); };
+    document.querySelectorAll('.left-tab').forEach((tab) => tab.addEventListener('click', () => setLeftPanel(tab.dataset.leftPanel)));
+    ELS['btn-insp'].onclick = function () { ELS.inspector.classList.toggle('collapsed'); this.classList.toggle('on'); setTimeout(scheduleRender, 320); };
+    ELS['btn-cluster'].onclick = () => { ELS['layout-menu'].classList.toggle('open'); updateLayoutControls(); };
+    ELS['layout-force'].onclick = () => { setLayoutMode('force'); ELS['layout-menu'].classList.remove('open'); };
+    ELS['layout-cluster'].onclick = () => { setLayoutMode('cluster'); ELS['layout-menu'].classList.remove('open'); };
+    ELS['layout-radial'].onclick = () => { setLayoutMode('radial'); ELS['layout-menu'].classList.remove('open'); };
+    ELS['btn-focus'].onclick = cycleFocusRadius;
+    ELS['btn-full'].onclick = toggleFullGraph;
+    ELS['btn-perf'].onclick = cyclePerformanceMode;
+    ELS['btn-labels'].onclick = function () { APP.state.showLabels = !APP.state.showLabels; this.classList.toggle('on', APP.state.showLabels); scheduleRender(); };
+    ELS['btn-filter'].onclick = () => ELS['filter-panel'].classList.toggle('open');
+    ELS['btn-lang'].onclick = () => { if (APP.graph) ELS['lang-menu'].classList.toggle('open'); };
+    ELS['lang-all'].onclick = () => { APP.state.activeLangs = null; renderLanguageMenu(); renderWaste(); renderCycles(); updateInspector(); scheduleRender(); };
+    ELS['lang-none'].onclick = () => { APP.state.activeLangs = new Set(); renderLanguageMenu(); renderWaste(); renderCycles(); updateInspector(); scheduleRender(); };
+    ELS['filter-all'].onclick = () => setVisibleClasses(new Set(DEFAULT_CLASSES));
+    ELS['filter-waste'].onclick = () => setVisibleClasses(new Set(['ORPHAN', 'ISLAND']));
+    ELS['filter-default'].onclick = () => setVisibleClasses(new Set(DEFAULT_CLASSES));
+    ELS['btn-search'].onclick = () => toggleSearch(true);
+    ELS['btn-reset'].onclick = () => { d3.select(APP.canvas).transition().duration(450).call(APP.zoomBehavior.transform, d3.zoomIdentity); };
+    ELS['btn-cycle-highlight'].onclick = () => { APP.state.highlightCycles = !APP.state.highlightCycles; renderCycles(); scheduleRender(); };
+    ELS['warning-dismiss'].onclick = () => { APP.state.dismissedWarning = true; updateUnsupportedBanner(); };
+    ELS['search-input'].oninput = (event) => { clearTimeout(APP.debounceSearch); APP.debounceSearch = setTimeout(() => setSearch(event.target.value), 80); };
+    ELS['search-input'].onkeydown = (event) => { if (event.key === 'Enter') { event.preventDefault(); focusFirstSearchMatch(); } if (event.key === 'Escape') { event.preventDefault(); clearSearch(true); } };
+    document.addEventListener('click', (event) => {
+      if (!event.target.closest('#lang-menu') && !event.target.closest('#btn-lang')) ELS['lang-menu'].classList.remove('open');
+      if (!event.target.closest('#filter-panel') && !event.target.closest('#btn-filter')) ELS['filter-panel'].classList.remove('open');
+      if (!event.target.closest('#layout-menu') && !event.target.closest('#btn-cluster')) { ELS['layout-menu'].classList.remove('open'); updateLayoutControls(); }
+    });
+    document.addEventListener('keydown', (event) => {
+      const tag = document.activeElement?.tagName;
+      const editing = ['INPUT', 'TEXTAREA'].includes(tag) || document.activeElement?.isContentEditable;
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); toggleSearch(true); return; }
+      if (!editing && event.key === '/') { event.preventDefault(); toggleSearch(true); return; }
+      if (event.key === 'Escape' && ELS['search-box'].classList.contains('open')) { event.preventDefault(); clearSearch(true); }
+    });
+    window.addEventListener('resize', () => { resizeCanvas(); if (APP.graph) requestLayout(); });
+  }
+
+  function boot() {
+    captureElements();
+    resizeCanvas();
+    bindCanvasInteractions();
+    wireUi();
+    syncShellState();
+
+    const tryLoad = async () => {
+      if (window.orbitsData) {
+        setGraphData(window.orbitsData, { source: 'script' });
+        return;
+      }
+      if (location.protocol !== 'file:') {
+        try {
+          const res = await fetch('graph.json');
+          if (res.ok) {
+            const data = await res.json();
+            if (data) setGraphData(data, { source: 'server' });
+          }
+        } catch (e) {
+          console.warn('Could not auto-fetch graph.json', e);
+        }
+      }
+    };
+
+    tryLoad();
+    window.loadGraph = (data) => setGraphData(data, { source: 'manual' });
+  }
+
+  boot();
+})();

@@ -1,3 +1,13 @@
+try {
+  importScripts('node_modules/d3/dist/d3.min.js');
+} catch (_err) {
+  try {
+    importScripts('/node_modules/d3/dist/d3.min.js');
+  } catch (_err2) {
+    self.d3 = self.d3 || null;
+  }
+}
+
 const SKIP_DIRS = new Set([
   '.git', 'node_modules', '.venv', '__pycache__', '.pytest_cache', '.mypy_cache',
   'dist', 'build', 'target', '.next', '.turbo', '.idea', '.vscode'
@@ -24,11 +34,17 @@ const LANG_BY_EXT = new Map([
 
 self.onmessage = async (event) => {
   const { type, payload } = event.data || {};
-  if (type !== 'analyzeProject') return;
-  const started = Date.now();
   try {
-    const graph = analyzeProject(payload.files || [], payload.rootName || 'workspace', started);
-    self.postMessage({ type: 'done', payload: graph });
+    if (type === 'analyzeProject') {
+      const started = Date.now();
+      const graph = analyzeProject(payload.files || [], payload.rootName || 'workspace', started);
+      self.postMessage({ type: 'done', payload: graph });
+      return;
+    }
+    if (type === 'layoutGraph') {
+      const positions = layoutGraph(payload || {});
+      self.postMessage({ type: 'layout-done', payload: { requestId: payload?.requestId, positions } });
+    }
   } catch (error) {
     self.postMessage({ type: 'error', payload: { message: error instanceof Error ? error.message : String(error) } });
   }
@@ -726,4 +742,104 @@ function computeSummary(classifications, cycles, islands, depths) {
     health_score: Math.max(0, Math.round(100 - penalty)),
     unreachable: [...depths.values()].filter((value) => value === -1).length,
   };
+}
+
+function layoutGraph(payload) {
+  const width = Math.max(640, Number(payload.width) || 1000);
+  const height = Math.max(480, Number(payload.height) || 760);
+  const nodes = (payload.nodes || []).map((node) => ({ ...node }));
+  const edges = (payload.edges || []).map((edge) => ({ source: edge.source, target: edge.target }));
+  const cached = payload.cachedPositions || {};
+  const positions = {};
+  if (!nodes.length) return positions;
+
+  const dirTargets = buildDirTargets(nodes, width, height);
+  nodes.forEach((node, index) => {
+    const cachedPos = cached[node.id];
+    const seeded = cachedPos || seedLayoutPosition(node, index, width, height, dirTargets);
+    node.x = seeded.x;
+    node.y = seeded.y;
+  });
+
+  if (payload.layoutMode === 'radial') {
+    applyRadialLayout(nodes, width, height);
+  } else if (self.d3 && self.d3.forceSimulation) {
+    const nodeIdSet = new Set(nodes.map((node) => node.id));
+    const simEdges = edges.filter((edge) => nodeIdSet.has(edge.source) && nodeIdSet.has(edge.target));
+    const largeGraph = nodes.length > 450 || simEdges.length > 1400;
+    const hugeGraph = nodes.length > 900 || simEdges.length > 3200;
+    const maxTicks = hugeGraph ? 80 : largeGraph ? 130 : 220;
+    const linkStrength = payload.layoutMode === 'cluster' ? (largeGraph ? 0.22 : 0.34) : largeGraph ? 0.16 : 0.24;
+    const charge = payload.layoutMode === 'cluster' ? (largeGraph ? -130 : -170) : largeGraph ? -170 : -230;
+    const collideIterations = hugeGraph ? 1 : 2;
+    const simulation = self.d3.forceSimulation(nodes)
+      .alpha(largeGraph ? 0.18 : 0.24)
+      .alphaDecay(hugeGraph ? 0.1 : largeGraph ? 0.075 : 0.055)
+      .velocityDecay(largeGraph ? 0.38 : 0.3)
+      .force('link', self.d3.forceLink(simEdges).id((d) => d.id).distance(payload.layoutMode === 'cluster' ? 72 : 92).strength(linkStrength))
+      .force('charge', self.d3.forceManyBody().strength(charge).distanceMax(620))
+      .force('collide', self.d3.forceCollide((node) => node.classification === 'ENTRY' ? 22 : 14).iterations(collideIterations))
+      .force('center', self.d3.forceCenter(width / 2, height / 2));
+    if (payload.layoutMode === 'cluster') {
+      simulation.force('x', self.d3.forceX((node) => dirTargets.get(node.dir || '.')?.x || width / 2).strength(largeGraph ? 0.1 : 0.14));
+      simulation.force('y', self.d3.forceY((node) => dirTargets.get(node.dir || '.')?.y || height / 2).strength(largeGraph ? 0.1 : 0.14));
+    } else {
+      simulation.force('x', self.d3.forceX(width / 2).strength(largeGraph ? 0.02 : 0.03));
+      simulation.force('y', self.d3.forceY(height / 2).strength(largeGraph ? 0.02 : 0.03));
+    }
+    for (let i = 0; i < maxTicks; i += 1) {
+      simulation.tick();
+      if (simulation.alpha() < (largeGraph ? 0.05 : 0.035)) break;
+    }
+    simulation.stop();
+  }
+
+  nodes.forEach((node) => {
+    positions[node.id] = { x: node.x, y: node.y };
+  });
+  return positions;
+}
+
+function buildDirTargets(nodes, width, height) {
+  const dirs = [...new Set(nodes.map((node) => node.dir || '.'))].sort();
+  const cols = Math.max(1, Math.ceil(Math.sqrt(dirs.length || 1)));
+  const rows = Math.max(1, Math.ceil(dirs.length / cols));
+  const xGap = width / (cols + 1);
+  const yGap = height / (rows + 1);
+  const targets = new Map();
+  dirs.forEach((dir, index) => {
+    const col = index % cols;
+    const row = Math.floor(index / cols);
+    targets.set(dir, { x: (col + 1) * xGap, y: (row + 1) * yGap });
+  });
+  return targets;
+}
+
+function seedLayoutPosition(node, index, width, height, dirTargets) {
+  const target = dirTargets.get(node.dir || '.') || { x: width / 2, y: height / 2 };
+  const hash = [...String(node.id || index)].reduce((sum, ch) => sum + ch.charCodeAt(0), 0);
+  const angle = (hash % 360) * (Math.PI / 180);
+  const depth = node.depth >= 0 ? node.depth : 3;
+  const radius = 36 + depth * 28 + (node.importance || 0) * 2;
+  return { x: target.x + Math.cos(angle) * radius, y: target.y + Math.sin(angle) * radius * 0.76 };
+}
+
+function applyRadialLayout(nodes, width, height) {
+  const centerX = width / 2;
+  const centerY = height / 2;
+  const byDepth = new Map();
+  nodes.forEach((node) => {
+    const depth = node.depth >= 0 ? node.depth : 5;
+    if (!byDepth.has(depth)) byDepth.set(depth, []);
+    byDepth.get(depth).push(node);
+  });
+  [...byDepth.entries()].sort((a, b) => a[0] - b[0]).forEach(([depth, bucket]) => {
+    const radius = 40 + depth * 64;
+    bucket.sort((a, b) => String(a.id).localeCompare(String(b.id)));
+    bucket.forEach((node, index) => {
+      const angle = (Math.PI * 2 * index) / Math.max(bucket.length, 1);
+      node.x = centerX + Math.cos(angle) * radius;
+      node.y = centerY + Math.sin(angle) * radius * 0.72;
+    });
+  });
 }
