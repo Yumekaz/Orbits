@@ -131,6 +131,20 @@ def _detect_language_support() -> dict[str, dict[str, str | bool]]:
     return support
 
 
+
+
+def _load_intentional_files(root: Path) -> list[str]:
+    marker = root / '.orbits_intentional.json'
+    if not marker.exists():
+        return []
+    try:
+        import json
+        data = json.loads(marker.read_text(encoding='utf-8'))
+    except Exception:
+        return []
+    files = data.get('intentional_files', []) if isinstance(data, dict) else []
+    return sorted({str(item).replace('\\', '/') for item in files if isinstance(item, str)})
+
 def _run_sequential_workers(buckets, root_str, cache_snapshot, resolver_config):
     return [run_worker(lang, [str(f) for f in files], root_str, cache_snapshot, resolver_config) for lang, files in buckets.items()]
 
@@ -263,6 +277,8 @@ def extract_all(root: Path, verbose: bool = True) -> dict:
         if not status['available'] and buckets.get(lang)
     ]
 
+    intentional_files = _load_intentional_files(root)
+
     total_imports = sum(total_stats.values())
     pct = round(total_stats['local'] / total_imports * 100, 1) if total_imports else 0.0
     elapsed = time.time() - t_start
@@ -295,5 +311,6 @@ def extract_all(root: Path, verbose: bool = True) -> dict:
             'elapsed_s': round(elapsed, 2),
             'language_support': language_support,
             'unsupported_languages': unsupported_languages,
+            'intentional_files': intentional_files,
         },
     }

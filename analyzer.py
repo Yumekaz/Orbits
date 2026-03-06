@@ -13,13 +13,99 @@ import argparse
 import http.server
 import json
 import mimetypes
+import os
+import shutil
+import subprocess
 import sys
 import threading
 import webbrowser
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 from graph_engine import analyze_graph
 from lang_dispatch import extract_all
+
+
+def _load_graph_payload(graph_path: Path) -> dict:
+    return json.loads(graph_path.read_text(encoding='utf-8'))
+
+
+def _graph_root_from_file(graph_path: Path) -> Path | None:
+    try:
+        payload = _load_graph_payload(graph_path)
+    except Exception:
+        return None
+    root = payload.get('meta', {}).get('root')
+    return Path(root) if root else None
+
+
+def _intentional_file_path(root: Path) -> Path:
+    return root / '.orbits_intentional.json'
+
+
+def _load_intentional_state(root: Path) -> dict:
+    marker = _intentional_file_path(root)
+    if not marker.exists():
+        return {'intentional_files': []}
+    try:
+        data = json.loads(marker.read_text(encoding='utf-8'))
+    except Exception:
+        return {'intentional_files': []}
+    if not isinstance(data, dict):
+        return {'intentional_files': []}
+    files = data.get('intentional_files', [])
+    if not isinstance(files, list):
+        files = []
+    return {'intentional_files': sorted({str(item).replace('\\', '/') for item in files if isinstance(item, str)})}
+
+
+def _save_intentional_state(root: Path, state: dict) -> None:
+    _intentional_file_path(root).write_text(json.dumps(state, indent=2), encoding='utf-8')
+
+
+def _blame_summary(root: Path, relpath: str) -> dict:
+    git_dir = root / '.git'
+    if not git_dir.exists():
+        return {'available': False, 'summary': 'Not a git repository'}
+    try:
+        proc = subprocess.run(['git', 'blame', '--line-porcelain', '--', relpath], cwd=root, capture_output=True, text=True, timeout=15)
+    except Exception as exc:
+        return {'available': False, 'summary': f'Blame unavailable: {exc}'}
+    if proc.returncode != 0:
+        return {'available': False, 'summary': proc.stderr.strip() or 'Blame unavailable'}
+    authors: dict[str, int] = {}
+    commits: set[str] = set()
+    latest_author = ''
+    latest_time = -1
+    for line in proc.stdout.splitlines():
+        if line.startswith('author '):
+            author = line[7:].strip()
+            authors[author] = authors.get(author, 0) + 1
+            if not latest_author:
+                latest_author = author
+        elif line.startswith('author-time '):
+            try:
+                ts = int(line.split(' ', 1)[1])
+            except ValueError:
+                ts = -1
+            if ts > latest_time:
+                latest_time = ts
+        elif line and not line.startswith(('author ', 'author-mail ', 'author-time ', 'author-tz ', 'summary ', 'filename ', '	', 'committer ', 'committer-mail ', 'committer-time ', 'committer-tz ', 'previous ', 'boundary')):
+            commits.add(line.split(' ', 1)[0])
+    top = sorted(authors.items(), key=lambda item: (-item[1], item[0]))[:3]
+    if not top:
+        return {'available': False, 'summary': 'No blame data'}
+    summary = ', '.join(f'{name} ({count})' for name, count in top)
+    return {'available': True, 'summary': summary, 'commit_count': len(commits)}
+
+
+def _rerun_graph(graph_path: Path) -> dict:
+    root = _graph_root_from_file(graph_path)
+    if not root:
+        raise FileNotFoundError('Graph root unavailable for re-analysis')
+    refreshed = run(root, verbose=False)
+    graph_path.write_text(json.dumps(refreshed, indent=2, ensure_ascii=False), encoding='utf-8')
+    return refreshed
 
 
 class _GraphRequestHandler(http.server.BaseHTTPRequestHandler):
@@ -28,6 +114,20 @@ class _GraphRequestHandler(http.server.BaseHTTPRequestHandler):
     asset_root: Path | None = None
 
     def do_GET(self):
+        route = urlparse(self.path)
+        if route.path == '/api/node-info':
+            params = parse_qs(route.query)
+            relpath = str((params.get('id') or [''])[0]).replace('\\', '/')
+            try:
+                target = self._resolve_node_path(relpath)
+                stat = target.stat()
+                root = _graph_root_from_file(self.graph_path)
+                blame = _blame_summary(root, relpath) if root else {'available': False, 'summary': 'Graph root unavailable'}
+                intentional = relpath in _load_intentional_state(root).get('intentional_files', []) if root else False
+                self._send_json({'ok': True, 'mtime': round(stat.st_mtime), 'mtime_iso': __import__('datetime').datetime.fromtimestamp(stat.st_mtime).isoformat(), 'blame': blame, 'intentional': intentional, 'can_modify': bool(root)})
+            except Exception as exc:
+                self._send_json({'ok': False, 'error': str(exc)}, status=404)
+            return
         filepath, content_type = self._resolve_route()
         if filepath is None:
             self.send_error(404, 'Not Found')
@@ -41,8 +141,92 @@ class _GraphRequestHandler(http.server.BaseHTTPRequestHandler):
             return
         self._send_headers(filepath, content_type)
 
+    def do_POST(self):
+        route = urlparse(self.path).path
+        try:
+            payload = self._read_json()
+            if route == '/api/open-file':
+                self._handle_open_file(payload)
+                return
+            if route == '/api/delete-file':
+                self._handle_delete_file(payload)
+                return
+            if route == '/api/mark-intentional':
+                self._handle_mark_intentional(payload)
+                return
+            if route == '/api/reanalyze':
+                self._handle_reanalyze()
+                return
+            self.send_error(404, 'Not Found')
+        except Exception as exc:
+            self._send_json({'ok': False, 'error': str(exc)}, status=500)
+
     def log_message(self, *_args):
         pass
+
+
+    def _read_json(self) -> dict:
+        length = int(self.headers.get('Content-Length', '0'))
+        raw = self.rfile.read(length) if length else b'{}'
+        if not raw:
+            return {}
+        return json.loads(raw.decode('utf-8'))
+
+    def _send_json(self, payload: dict, status: int = 200):
+        data = json.dumps(payload, ensure_ascii=False).encode('utf-8')
+        self.send_response(status)
+        self.send_header('Content-Type', 'application/json; charset=utf-8')
+        self.send_header('Content-Length', str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def _resolve_node_path(self, relpath: str) -> Path:
+        root = _graph_root_from_file(self.graph_path)
+        if not root:
+            raise FileNotFoundError('Graph root unavailable')
+        candidate = (root / relpath).resolve()
+        candidate.relative_to(root.resolve())
+        return candidate
+
+    def _handle_open_file(self, payload: dict):
+        relpath = str(payload.get('id', '')).replace('\\', '/')
+        target = self._resolve_node_path(relpath)
+        if not target.exists():
+            raise FileNotFoundError(relpath)
+        os.startfile(str(target))
+        self._send_json({'ok': True})
+
+    def _handle_delete_file(self, payload: dict):
+        relpath = str(payload.get('id', '')).replace('\\', '/')
+        target = self._resolve_node_path(relpath)
+        if not target.exists():
+            raise FileNotFoundError(relpath)
+        if target.is_dir():
+            raise IsADirectoryError(relpath)
+        target.unlink()
+        graph = _rerun_graph(self.graph_path)
+        self._send_json({'ok': True, 'graph': graph})
+
+    def _handle_mark_intentional(self, payload: dict):
+        relpath = str(payload.get('id', '')).replace('\\', '/')
+        intentional = bool(payload.get('intentional', True))
+        root = _graph_root_from_file(self.graph_path)
+        if not root:
+            raise FileNotFoundError('Graph root unavailable')
+        state = _load_intentional_state(root)
+        files = set(state.get('intentional_files', []))
+        if intentional:
+            files.add(relpath)
+        else:
+            files.discard(relpath)
+        state['intentional_files'] = sorted(files)
+        _save_intentional_state(root, state)
+        graph = _rerun_graph(self.graph_path)
+        self._send_json({'ok': True, 'graph': graph, 'intentional': intentional})
+
+    def _handle_reanalyze(self):
+        graph = _rerun_graph(self.graph_path)
+        self._send_json({'ok': True, 'graph': graph})
 
     def _resolve_route(self) -> tuple[Path | None, str]:
         route = self.path.split('?', 1)[0]
@@ -50,6 +234,8 @@ class _GraphRequestHandler(http.server.BaseHTTPRequestHandler):
             return self.visualizer_path, 'text/html; charset=utf-8'
         if route == '/graph.json':
             return self.graph_path, 'application/json; charset=utf-8'
+        if route == '/api/node-info':
+            return None, 'application/json; charset=utf-8'
 
         if not self.asset_root:
             return None, 'application/octet-stream'

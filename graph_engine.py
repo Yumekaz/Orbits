@@ -382,10 +382,11 @@ def analyze_graph(raw: dict) -> dict:
         })
 
     # ── Build waste list (actionable dead files) ───────────────────────────
+    intentional_files = set(meta.get('intentional_files', []))
     waste = []
     for node in enriched_nodes:
         cls = node['classification']
-        if cls in (NodeClass.ORPHAN, NodeClass.ISLAND):
+        if cls in (NodeClass.ORPHAN, NodeClass.ISLAND) and node['id'] not in intentional_files:
             waste.append({
                 'id':             node['id'],
                 'name':           node['name'],

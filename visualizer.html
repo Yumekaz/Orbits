@@ -200,7 +200,6 @@
     #waste-panel,
     #cycles-panel,
     #inspector {
-      width: 290px;
       background: var(--panel-bg);
       backdrop-filter: blur(18px);
       -webkit-backdrop-filter: blur(18px);
@@ -208,17 +207,24 @@
       flex-direction: column;
       flex-shrink: 0;
       overflow: hidden;
-      transition: width .35s cubic-bezier(0.4, 0, 0.2, 1);
       z-index: 50
     }
 
-    #cycles-panel {
+    #left-rail {
       width: 320px;
-      border-right: 1px solid var(--border)
+      border-right: 1px solid var(--border);
+      transition: width .35s cubic-bezier(0.4, 0, 0.2, 1)
     }
 
-    #waste-panel {
-      border-right: 1px solid var(--border)
+    #left-rail.collapsed {
+      width: 0;
+      border: none
+    }
+
+    #waste-panel,
+    #cycles-panel {
+      width: 100%;
+      flex: 1
     }
 
     #inspector {
@@ -226,10 +232,44 @@
       overflow-y: auto
     }
 
-    #waste-panel.collapsed,
     #inspector.collapsed {
       width: 0;
       border: none
+    }
+
+    #left-tabs {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0
+    }
+
+    .left-tab {
+      flex: 1;
+      height: 48px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      font-size: 10px;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+      color: var(--muted);
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: all .2s ease
+    }
+
+    .left-tab.active {
+      color: var(--cyan);
+      border-bottom-color: var(--cyan)
+    }
+
+    .left-tab .badge {
+      margin-left: 0
+    }
+
+    .left-panel-hidden {
+      display: none !important
     }
 
     .section-header {
@@ -328,6 +368,31 @@
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis
+    }
+
+
+    .item-actions {
+      margin-left: auto;
+      display: flex;
+      gap: 6px;
+      align-items: center
+    }
+
+    .item-btn {
+      font-size: 9px;
+      padding: 4px 7px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,.03);
+      color: var(--muted);
+      cursor: pointer;
+      text-transform: uppercase;
+      letter-spacing: .08em
+    }
+
+    .item-btn:hover {
+      border-color: var(--cyan);
+      color: var(--cyan)
     }
 
     .is-pane {
@@ -929,21 +994,26 @@
     </div>
 
     <div id="main">
-      <div id="waste-panel">
-        <div class="section-header"><span class="sh-title">Dead Files</span><span class="badge"
-            id="waste-badge">0</span></div>
-        <div id="waste-list" class="list-cont">
-          <div style="padding:40px;text-align:center;color:var(--dim)">⬡<br>Scan a project to analyze waste</div>
+      <div id="left-rail">
+        <div id="left-tabs">
+          <div class="left-tab active" data-left-panel="waste-panel">dead <span class="badge" id="waste-badge">0</span></div>
+          <div class="left-tab" data-left-panel="cycles-panel">cycles <span class="badge ok" id="cycle-badge">0</span></div>
         </div>
-      </div>
+        <div id="waste-panel">
+          <div class="section-header"><span class="sh-title">Dead Files</span></div>
+          <div id="waste-list" class="list-cont">
+            <div style="padding:40px;text-align:center;color:var(--dim)">⬡<br>Scan a project to analyze waste</div>
+          </div>
+        </div>
 
-      <div id="cycles-panel">
-        <div class="section-header"><span class="sh-title">Cycles</span>
-          <div style="display:flex;align-items:center;gap:10px"><button class="mini-btn"
-              id="btn-cycle-highlight">highlight</button><span class="badge" id="cycle-badge">0</span></div>
-        </div>
-        <div id="cycle-list" class="list-cont">
-          <div style="padding:40px;text-align:center;color:var(--dim)">No cycle data loaded</div>
+        <div id="cycles-panel" class="left-panel-hidden">
+          <div class="section-header"><span class="sh-title">Cycles</span>
+            <div style="display:flex;align-items:center;gap:10px"><button class="mini-btn"
+                id="btn-cycle-highlight">highlight</button></div>
+          </div>
+          <div id="cycle-list" class="list-cont">
+            <div style="padding:40px;text-align:center;color:var(--dim)">No cycle data loaded</div>
+          </div>
         </div>
       </div>
 
@@ -1000,6 +1070,10 @@
             <div class="is-val-hero" id="iname"></div>
             <div id="imeta"></div>
           </div>
+        </div>
+        <div class="is-pane">
+          <div class="is-label">History</div>
+          <div id="ihistory" style="color:var(--dim);font-size:10px">No node selected</div>
         </div>
         <div class="is-pane">
           <div class="is-label">Cycle Membership</div>
@@ -1077,6 +1151,43 @@
     }
     function nodeMatchesSearch(node) { if (!searchQuery) return true; const q = searchQuery.toLowerCase(); return basename(node.id).toLowerCase().includes(q) || normalizeId(node.filepath || node.id).toLowerCase().includes(q); }
     function formatSize(b) { if (!b) return '0 B'; if (b < 1024) return b + ' B'; if (b < 1048576) return (b / 1024).toFixed(1) + ' KB'; return (b / 1048576).toFixed(1) + ' MB'; }
+    function formatDate(ts) {
+      if (!ts) return '—';
+      const d = new Date(ts * 1000);
+      return isNaN(d.getTime()) ? '—' : d.toLocaleString();
+    }
+
+    async function apiPost(route, payload) {
+      const res = await fetch(route, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}) });
+      const data = await res.json();
+      if (!res.ok || data.ok === False || data.ok === false) throw new Error(data.error || `Request failed: ${route}`);
+      return data;
+    }
+
+    async function fetchNodeInfo(id) {
+      const res = await fetch(`/api/node-info?id=${encodeURIComponent(id)}`);
+      const data = await res.json();
+      if (!res.ok || data.ok === false) throw new Error(data.error || 'Node info unavailable');
+      return data;
+    }
+
+    async function openNodeFile(id) {
+      await apiPost('/api/open-file', { id });
+      toast('Opened file');
+    }
+
+    async function deleteNodeFile(id) {
+      if (!confirm(`Delete ${id}?`)) return;
+      const data = await apiPost('/api/delete-file', { id });
+      loadGraph(data.graph);
+      toast('File deleted');
+    }
+
+    async function markIntentional(id, intentional = true) {
+      const data = await apiPost('/api/mark-intentional', { id, intentional });
+      loadGraph(data.graph);
+      toast(intentional ? 'Marked intentional' : 'Removed intentional mark');
+    }
 
     function buildCycleIndex() {
       cycleNodeSet = new Set(); cycleLookup = new Map();
@@ -1279,7 +1390,7 @@
       const total = Object.values(imp).reduce((a, b) => a + b, 0), pct = total ? Math.round((imp.local || 0) / total * 100) : 0;
       document.getElementById('s-files').textContent = G.nodes.length;
       document.getElementById('s-edges').textContent = G.edges.length;
-      document.getElementById('s-orphans').textContent = (c.ORPHAN || 0) + (c.ISLAND || 0);
+      document.getElementById('s-orphans').textContent = (G.waste || []).length;
       document.getElementById('s-cycles').textContent = s.cycle_count || 0;
       document.getElementById('s-health').textContent = s.health_score ?? '—';
       document.getElementById('s-unreachable').textContent = s.unreachable ?? 0;
@@ -1291,8 +1402,8 @@
       document.getElementById('elapsed').textContent = G.meta?.elapsed_s ? `Analysed in ${G.meta.elapsed_s}s` : '';
     }
 
-    function itemRow(node, color) { return `<div class="list-item" data-id="${escapeHtml(normalizeId(node.id))}"><div class="item-dot" style="background:${color}"></div><div class="item-info"><div class="item-name">${escapeHtml(basename(node.id))}</div><div class="item-path">${escapeHtml(dirname(node.id))}</div></div></div>`; }
-    function bindRowClicks(container) { container.querySelectorAll('.list-item').forEach(el => el.addEventListener('click', () => focusNode(el.dataset.id))); }
+    function itemRow(node, color) { const id = escapeHtml(normalizeId(node.id)); return `<div class="list-item" data-id="${id}"><div class="item-dot" style="background:${color}"></div><div class="item-info"><div class="item-name">${escapeHtml(basename(node.id))}</div><div class="item-path">${escapeHtml(dirname(node.id))}</div></div><div class="item-actions"><button class="item-btn" data-open="${id}">open</button><button class="item-btn" data-intentional="${id}">keep</button><button class="item-btn" data-delete="${id}">del</button></div></div>`; }
+    function bindRowClicks(container) { container.querySelectorAll('.list-item').forEach(el => el.addEventListener('click', e => { if (e.target.closest('[data-open],[data-delete],[data-intentional]')) return; focusNode(el.dataset.id); })); container.querySelectorAll('[data-open]').forEach(el => el.addEventListener('click', e => { e.stopPropagation(); openNodeFile(el.dataset.open).catch(err => toast(err.message)); })); container.querySelectorAll('[data-delete]').forEach(el => el.addEventListener('click', e => { e.stopPropagation(); deleteNodeFile(el.dataset.delete).catch(err => toast(err.message)); })); container.querySelectorAll('[data-intentional]').forEach(el => el.addEventListener('click', e => { e.stopPropagation(); markIntentional(el.dataset.intentional, true).catch(err => toast(err.message)); })); }
 
     function renderWaste() {
       if (!G) return; const waste = (G.waste || []).filter(nodeVisible), list = document.getElementById('waste-list'), badge = document.getElementById('waste-badge');
@@ -1351,14 +1462,16 @@
       const inE = G.edges.filter(e => normalizeId(e.target.id || e.target) === selId), outE = G.edges.filter(e => normalizeId(e.source.id || e.source) === selId);
       document.getElementById('ip').style.display = 'none'; document.getElementById('ic').style.display = 'block'; document.getElementById('iname').textContent = normalizeId(node.filepath || node.id);
       const island = node.island_id >= 0 ? `<span class="v purple">Cluster ${node.island_id + 1}</span>` : '<span class="v">—</span>';
-      document.getElementById('imeta').innerHTML = `<div class="kv-row"><span class="k">Class</span><span class="v" style="color:${node.classification === 'ENTRY' ? 'var(--green)' : node.classification === 'ORPHAN' ? 'var(--red)' : node.classification === 'ISLAND' ? 'var(--purple)' : 'var(--cyan)'}">${escapeHtml(node.classification)}</span></div><div class="kv-row"><span class="k">Size</span><span class="v">${formatSize(node.size)}</span></div><div class="kv-row"><span class="k">Inbound</span><span class="v">${inE.length}</span></div><div class="kv-row"><span class="k">Outbound</span><span class="v">${outE.length}</span></div><div class="kv-row"><span class="k">Language</span><span class="v" style="color:${getLangColor(node.language)}">${escapeHtml(node.language || '—')}</span></div><div class="kv-row"><span class="k">Depth</span><span class="v">${node.depth >= 0 ? node.depth : '∞'}</span></div><div class="kv-row"><span class="k">Island</span>${island}</div>`;
+      document.getElementById('imeta').innerHTML = `<div class="kv-row"><span class="k">Class</span><span class="v" style="color:${node.classification === 'ENTRY' ? 'var(--green)' : node.classification === 'ORPHAN' ? 'var(--red)' : node.classification === 'ISLAND' ? 'var(--purple)' : 'var(--cyan)'}">${escapeHtml(node.classification)}</span></div><div class="kv-row"><span class="k">Size</span><span class="v">${formatSize(node.size)}</span></div><div class="kv-row"><span class="k">Inbound</span><span class="v">${inE.length}</span></div><div class="kv-row"><span class="k">Outbound</span><span class="v">${outE.length}</span></div><div class="kv-row"><span class="k">Language</span><span class="v" style="color:${getLangColor(node.language)}">${escapeHtml(node.language || '—')}</span></div><div class="kv-row"><span class="k">Depth</span><span class="v">${node.depth >= 0 ? node.depth : '∞'}</span></div><div class="kv-row"><span class="k">Island</span>${island}</div><div class="kv-row"><span class="k">Modified</span><span class="v">${formatDate(node.mtime)}</span></div>`;
+      document.getElementById('ihistory').innerHTML = '<div style="color:var(--dim);font-size:10px">Loading git history…</div>';
+      fetchNodeInfo(selId).then(info => { document.getElementById('ihistory').innerHTML = `<div class="kv-row"><span class="k">Modified</span><span class="v">${escapeHtml(info.mtime_iso ? new Date(info.mtime_iso).toLocaleString() : formatDate(node.mtime))}</span></div><div style="margin-top:8px;font-size:10px;line-height:1.6;color:var(--text)"><span style="color:var(--muted);text-transform:uppercase;letter-spacing:.12em">Blame</span><br>${escapeHtml(info.blame?.summary || 'Unavailable')}</div>`; }).catch(err => { document.getElementById('ihistory').innerHTML = `<div style="color:var(--dim);font-size:10px">${escapeHtml(err.message)}</div>`; });
       const cycles = cycleLookup.get(selId) || [];
       document.getElementById('icycle').innerHTML = cycles.length ? cycles.map(entry => `<div class="chip-cont"><div style="font-size:9px;color:var(--amber);letter-spacing:.12em;text-transform:uppercase">Cycle ${entry.index + 1}</div><div class="cycle-path">${entry.path.map((pid, idx) => `${idx ? '<span class="cycle-arrow">→</span>' : ''}<span class="chip cycle" data-focus="${escapeHtml(pid)}">${escapeHtml(basename(pid))}</span>`).join('')}</div></div>`).join('') : '<div style="color:var(--dim);font-size:10px">This node is not part of a cycle.</div>';
       document.getElementById('icycle').querySelectorAll('[data-focus]').forEach(chip => chip.addEventListener('click', () => focusNode(chip.dataset.focus)));
       renderChips(document.getElementById('iout'), outE, 'out'); renderChips(document.getElementById('iin'), inE, 'in'); applyGraphState();
     }
 
-    function clearSel() { selId = null; document.getElementById('ip').style.display = 'block'; document.getElementById('ic').style.display = 'none'; document.getElementById('icycle').innerHTML = '<div style="color:var(--dim);font-size:10px">No cycle selected</div>'; applyGraphState(); }
+    function clearSel() { selId = null; document.getElementById('ip').style.display = 'block'; document.getElementById('ic').style.display = 'none'; document.getElementById('ihistory').innerHTML = '<div style="color:var(--dim);font-size:10px">No node selected</div>'; document.getElementById('icycle').innerHTML = '<div style="color:var(--dim);font-size:10px">No cycle selected</div>'; applyGraphState(); }
     function focusNode(id) { const nid = normalizeId(id), sn = simN.find(n => n.id === nid); if (sn && zb) { const svg = d3.select('#graph'), W = svg.node().clientWidth, H = svg.node().clientHeight; svg.transition().duration(600).call(zb.transform, d3.zoomIdentity.translate(W / 2, H / 2).scale(1.8).translate(-sn.x, -sn.y)); } selectNode(nid); }
     function focusFirstSearchMatch() { const first = simN.find(nodeMatchesSearch); if (first) focusNode(first.id); }
     function toggleSearch(open = true) { document.getElementById('search-box').classList.toggle('open', open); if (open) { const input = document.getElementById('search-input'); input.focus(); input.select(); } }
@@ -1367,8 +1480,15 @@
     let _tt; function toast(m) { const el = document.getElementById('toast'); el.textContent = m; el.classList.add('show'); clearTimeout(_tt); _tt = setTimeout(() => el.classList.remove('show'), 3000); }
 
     document.getElementById('btn-folder').onclick = () => openFolder().catch(err => toast(err.message || String(err)));
-    document.getElementById('btn-waste').onclick = function () { document.getElementById('waste-panel').classList.toggle('collapsed'); this.classList.toggle('on'); setTimeout(() => renderGraph(), 350); };
-    document.getElementById('btn-cycles').onclick = function () { document.getElementById('cycles-panel').classList.toggle('collapsed'); this.classList.toggle('on'); setTimeout(() => renderGraph(), 350); };
+    function setLeftPanel(panelId) {
+      document.querySelectorAll('.left-tab').forEach(tab => tab.classList.toggle('active', tab.dataset.leftPanel === panelId));
+      document.getElementById('waste-panel').classList.toggle('left-panel-hidden', panelId !== 'waste-panel');
+      document.getElementById('cycles-panel').classList.toggle('left-panel-hidden', panelId !== 'cycles-panel');
+    }
+
+    document.getElementById('btn-waste').onclick = function () { document.getElementById('left-rail').classList.toggle('collapsed'); this.classList.toggle('on'); setTimeout(() => renderGraph(), 350); };
+    document.getElementById('btn-cycles').onclick = function () { document.getElementById('left-rail').classList.remove('collapsed'); document.getElementById('btn-waste').classList.add('on'); setLeftPanel('cycles-panel'); setTimeout(() => renderGraph(), 350); };
+    document.querySelectorAll('.left-tab').forEach(tab => tab.addEventListener('click', () => setLeftPanel(tab.dataset.leftPanel)));
     document.getElementById('btn-insp').onclick = function () { document.getElementById('inspector').classList.toggle('collapsed'); this.classList.toggle('on'); setTimeout(() => renderGraph(), 350); };
     document.getElementById('btn-cluster').onclick = function () { clusterMode = !clusterMode; this.classList.toggle('on', clusterMode); renderGraph(); };
     document.getElementById('btn-labels').onclick = function () { showLabels = !showLabels; this.classList.toggle('on'); applyGraphState(); };
