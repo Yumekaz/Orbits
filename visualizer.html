@@ -629,48 +629,32 @@
       background: rgba(0, 229, 255, .08)
     }
 
-    #lang-menu {
-      position: absolute;
-      top: 48px;
-      right: 14px;
-      width: 260px;
-      background: rgba(7, 9, 18, .96);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 12px;
-      display: none;
-      z-index: 150;
-      box-shadow: 0 16px 40px rgba(0, 0, 0, .45)
-    }
-
-    #lang-menu.open {
-      display: block
-    }
-
-
+    #lang-menu,
     #filter-panel,
     #layout-menu {
-      position: absolute;
-      top: 48px;
-      width: 280px;
-      background: rgba(7, 9, 18, .96);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 12px;
+      position: fixed;
+      top: 72px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: min(360px, calc(100vw - 32px));
+      background: rgba(7, 9, 18, .98);
+      border: 1px solid var(--border-hi);
+      border-radius: 10px;
+      padding: 14px;
       display: none;
-      z-index: 150;
-      box-shadow: 0 16px 40px rgba(0, 0, 0, .45)
+      z-index: 260;
+      box-shadow: 0 18px 50px rgba(0, 0, 0, .5)
     }
 
-    #filter-panel {
-      right: 126px
+    #lang-menu {
+      width: min(340px, calc(100vw - 32px))
     }
 
     #layout-menu {
-      right: 232px;
-      width: 220px
+      width: min(300px, calc(100vw - 32px))
     }
 
+    #lang-menu.open,
     #filter-panel.open,
     #layout-menu.open {
       display: block
@@ -1074,7 +1058,8 @@
         </div>
         <canvas id="graph-canvas"></canvas>
         <canvas id="minimap" width="190" height="124"></canvas>
-        <div id="health-pill" class="hidden">Project Health <span>—</span>/100 &nbsp; <small id="elapsed"
+        <div id="health-pill" class="hidden">Project Health <span>—</span>/100 &nbsp; <small id="perf-mode"
+            style="font-size:9px;opacity:0.72">Perf AUTO</small> &nbsp; <small id="elapsed"
             style="font-size:9px;opacity:0.5"></small></div>
         <div id="toast"></div>
       </div>

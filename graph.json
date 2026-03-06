@@ -13,6 +13,18 @@
       "island_id": -1
     },
     {
+      "id": "benchmark_graph.py",
+      "filepath": "benchmark_graph.py",
+      "name": "benchmark_graph.py",
+      "language": "python",
+      "size": 4627,
+      "mtime": 1772792493,
+      "dir": ".",
+      "classification": "ISLAND",
+      "depth": -1,
+      "island_id": 0
+    },
+    {
       "id": "cache.py",
       "filepath": "cache.py",
       "name": "cache.py",
@@ -181,6 +193,18 @@
       "island_id": -1
     },
     {
+      "id": "extractors\\__init__.py",
+      "filepath": "extractors\\__init__.py",
+      "name": "__init__.py",
+      "language": "python",
+      "size": 0,
+      "mtime": 1772789252,
+      "dir": "extractors",
+      "classification": "ORPHAN",
+      "depth": -1,
+      "island_id": -1
+    },
+    {
       "id": "resolvers\\c_family_resolver.py",
       "filepath": "resolvers\\c_family_resolver.py",
       "name": "c_family_resolver.py",
@@ -241,6 +265,18 @@
       "island_id": -1
     },
     {
+      "id": "resolvers\\__init__.py",
+      "filepath": "resolvers\\__init__.py",
+      "name": "__init__.py",
+      "language": "python",
+      "size": 0,
+      "mtime": 1772789252,
+      "dir": "resolvers",
+      "classification": "ORPHAN",
+      "depth": -1,
+      "island_id": -1
+    },
+    {
       "id": "test_repo\\foo.py",
       "filepath": "test_repo\\foo.py",
       "name": "foo.py",
@@ -263,6 +299,18 @@
       "classification": "TEST",
       "depth": -1,
       "island_id": -1
+    },
+    {
+      "id": "tests\\test_benchmark_graph.py",
+      "filepath": "tests\\test_benchmark_graph.py",
+      "name": "test_benchmark_graph.py",
+      "language": "python",
+      "size": 780,
+      "mtime": 1772792504,
+      "dir": "tests",
+      "classification": "TEST",
+      "depth": -1,
+      "island_id": 0
     },
     {
       "id": "tests\\test_multilang.py",
@@ -305,8 +353,20 @@
       "filepath": "visualizer_app.js",
       "name": "visualizer_app.js",
       "language": "javascript",
-      "size": 55079,
-      "mtime": 1772788900,
+      "size": 72254,
+      "mtime": 1772793068,
+      "dir": ".",
+      "classification": "ORPHAN",
+      "depth": -1,
+      "island_id": -1
+    },
+    {
+      "id": "visualizer_app_backup.js",
+      "filepath": "visualizer_app_backup.js",
+      "name": "visualizer_app_backup.js",
+      "language": "javascript",
+      "size": 72254,
+      "mtime": 1772792450,
       "dir": ".",
       "classification": "ORPHAN",
       "depth": -1,
@@ -317,8 +377,8 @@
       "filepath": "visualizer_worker.js",
       "name": "visualizer_worker.js",
       "language": "javascript",
-      "size": 29338,
-      "mtime": 1772785609,
+      "size": 30051,
+      "mtime": 1772791959,
       "dir": ".",
       "classification": "ORPHAN",
       "depth": -1,
@@ -636,6 +696,13 @@
       "language": "python"
     },
     {
+      "source": "tests\\test_benchmark_graph.py",
+      "target": "benchmark_graph.py",
+      "type": "import",
+      "line": 3,
+      "language": "python"
+    },
+    {
       "source": "tests\\test_multilang.py",
       "target": "lang_dispatch.py",
       "type": "import_from",
@@ -658,42 +725,76 @@
     }
   ],
   "cycles": [],
-  "islands": [],
+  "islands": [
+    [
+      "benchmark_graph.py",
+      "tests\\test_benchmark_graph.py"
+    ]
+  ],
   "waste": [
+    {
+      "id": "benchmark_graph.py",
+      "name": "benchmark_graph.py",
+      "classification": "ISLAND",
+      "size": 4627,
+      "island_id": 0
+    },
+    {
+      "id": "extractors\\__init__.py",
+      "name": "__init__.py",
+      "classification": "ORPHAN",
+      "size": 0,
+      "island_id": -1
+    },
+    {
+      "id": "resolvers\\__init__.py",
+      "name": "__init__.py",
+      "classification": "ORPHAN",
+      "size": 0,
+      "island_id": -1
+    },
     {
       "id": "visualizer_app.js",
       "name": "visualizer_app.js",
       "classification": "ORPHAN",
-      "size": 55079,
+      "size": 72254,
+      "island_id": -1
+    },
+    {
+      "id": "visualizer_app_backup.js",
+      "name": "visualizer_app_backup.js",
+      "classification": "ORPHAN",
+      "size": 72254,
       "island_id": -1
     },
     {
       "id": "visualizer_worker.js",
       "name": "visualizer_worker.js",
       "classification": "ORPHAN",
-      "size": 29338,
+      "size": 30051,
       "island_id": -1
     }
   ],
   "summary": {
     "counts": {
-      "TEST": 8,
+      "TEST": 9,
       "ENTRY": 2,
+      "ISLAND": 1,
       "LEAF": 10,
       "CONNECTED": 8,
-      "ORPHAN": 2
+      "ORPHAN": 5
     },
-    "total": 30,
+    "total": 35,
     "cycle_count": 0,
-    "island_count": 0,
+    "island_count": 1,
     "max_depth": 3,
-    "health_score": 97,
-    "unreachable": 10
+    "health_score": 93,
+    "unreachable": 15
   },
   "meta": {
     "root": "C:\\Users\\Mihir\\OneDrive\\Desktop\\orbits",
-    "total_files": 30,
-    "total_edges": 42,
+    "total_files": 35,
+    "total_edges": 43,
     "languages": [
       "python",
       "javascript",
@@ -701,15 +802,15 @@
       "go"
     ],
     "import_stats": {
-      "local": 102,
-      "stdlib": 149,
+      "local": 103,
+      "stdlib": 158,
       "third_party": 0,
       "external": 0,
       "unknown": 30
     },
     "package_name": "",
     "phase": 3,
-    "elapsed_s": 0.67,
+    "elapsed_s": 0.48,
     "language_support": {
       "python": {
         "available": true,

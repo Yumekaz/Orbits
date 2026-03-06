@@ -1079,7 +1079,7 @@
 
   function performanceBadgeText() {
     const mode = (APP.state.perfMode || 'auto').toUpperCase();
-    return APP.motionEnabled ? `Perf ${mode}` : `Perf ${mode}  STATIC`;
+    return APP.motionEnabled ? `Perf ${mode}` : `Perf ${mode} · STATIC`;
   }
 
   function updatePerformanceControls() {
@@ -1281,27 +1281,6 @@
     });
   }
 
-  function closeMenus() {
-    ELS['lang-menu'].classList.remove('open');
-    ELS['filter-panel'].classList.remove('open');
-    ELS['layout-menu'].classList.remove('open');
-    ELS['btn-filter'].classList.remove('on');
-    if (APP.state.activeLangs === null) ELS['btn-lang'].classList.remove('on');
-    updateLayoutControls();
-  }
-
-  function openAnchoredMenu(buttonEl, menuEl) {
-    const wasOpen = menuEl.classList.contains('open');
-    closeMenus();
-    if (wasOpen) return;
-    menuEl.style.left = '50%';
-    menuEl.style.top = '72px';
-    menuEl.style.transform = 'translateX(-50%)';
-    menuEl.classList.add('open');
-    buttonEl.classList.add('on');
-    updateLayoutControls();
-  }
-
   function toast(message) {
     ELS.toast.textContent = message;
     ELS.toast.classList.add('show');
@@ -1335,7 +1314,7 @@
     ELS['btn-cycles'].onclick = function () { ELS['left-rail'].classList.remove('collapsed'); ELS['btn-waste'].classList.add('on'); setLeftPanel('cycles-panel'); setTimeout(scheduleRender, 320); };
     document.querySelectorAll('.left-tab').forEach((tab) => tab.addEventListener('click', () => setLeftPanel(tab.dataset.leftPanel)));
     ELS['btn-insp'].onclick = function () { ELS.inspector.classList.toggle('collapsed'); this.classList.toggle('on'); setTimeout(scheduleRender, 320); };
-    ELS['btn-cluster'].onclick = () => openAnchoredMenu(ELS['btn-cluster'], ELS['layout-menu']);
+    ELS['btn-cluster'].onclick = () => { ELS['layout-menu'].classList.toggle('open'); updateLayoutControls(); };
     ELS['layout-force'].onclick = () => { setLayoutMode('force'); ELS['layout-menu'].classList.remove('open'); };
     ELS['layout-cluster'].onclick = () => { setLayoutMode('cluster'); ELS['layout-menu'].classList.remove('open'); };
     ELS['layout-radial'].onclick = () => { setLayoutMode('radial'); ELS['layout-menu'].classList.remove('open'); };
@@ -1343,8 +1322,8 @@
     ELS['btn-full'].onclick = toggleFullGraph;
     ELS['btn-perf'].onclick = cyclePerformanceMode;
     ELS['btn-labels'].onclick = function () { APP.state.showLabels = !APP.state.showLabels; this.classList.toggle('on', APP.state.showLabels); scheduleRender(); };
-    ELS['btn-filter'].onclick = () => openAnchoredMenu(ELS['btn-filter'], ELS['filter-panel']);
-    ELS['btn-lang'].onclick = () => { if (APP.graph) openAnchoredMenu(ELS['btn-lang'], ELS['lang-menu']); };
+    ELS['btn-filter'].onclick = () => ELS['filter-panel'].classList.toggle('open');
+    ELS['btn-lang'].onclick = () => { if (APP.graph) ELS['lang-menu'].classList.toggle('open'); };
     ELS['lang-all'].onclick = () => { APP.state.activeLangs = null; renderLanguageMenu(); renderWaste(); renderCycles(); updateInspector(); scheduleRender(); };
     ELS['lang-none'].onclick = () => { APP.state.activeLangs = new Set(); renderLanguageMenu(); renderWaste(); renderCycles(); updateInspector(); scheduleRender(); };
     ELS['filter-all'].onclick = () => setVisibleClasses(new Set(DEFAULT_CLASSES));
@@ -1357,9 +1336,9 @@
     ELS['search-input'].oninput = (event) => { clearTimeout(APP.debounceSearch); APP.debounceSearch = setTimeout(() => setSearch(event.target.value), 80); };
     ELS['search-input'].onkeydown = (event) => { if (event.key === 'Enter') { event.preventDefault(); focusFirstSearchMatch(); } if (event.key === 'Escape') { event.preventDefault(); clearSearch(true); } };
     document.addEventListener('click', (event) => {
-      const target = event.target;
-      if (target.closest('#lang-menu') || target.closest('#btn-lang') || target.closest('#filter-panel') || target.closest('#btn-filter') || target.closest('#layout-menu') || target.closest('#btn-cluster')) return;
-      closeMenus();
+      if (!event.target.closest('#lang-menu') && !event.target.closest('#btn-lang')) ELS['lang-menu'].classList.remove('open');
+      if (!event.target.closest('#filter-panel') && !event.target.closest('#btn-filter')) ELS['filter-panel'].classList.remove('open');
+      if (!event.target.closest('#layout-menu') && !event.target.closest('#btn-cluster')) { ELS['layout-menu'].classList.remove('open'); updateLayoutControls(); }
     });
     document.addEventListener('keydown', (event) => {
       const tag = document.activeElement?.tagName;
@@ -1368,7 +1347,7 @@
       if (!editing && event.key === '/') { event.preventDefault(); toggleSearch(true); return; }
       if (event.key === 'Escape' && ELS['search-box'].classList.contains('open')) { event.preventDefault(); clearSearch(true); }
     });
-    window.addEventListener('resize', () => { closeMenus(); resizeCanvas(); if (APP.graph) requestLayout(); });
+    window.addEventListener('resize', () => { resizeCanvas(); if (APP.graph) requestLayout(); });
   }
 
   function boot() {
