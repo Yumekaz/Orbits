@@ -153,7 +153,8 @@
       gap: 8px;
       padding: 0 14px;
       margin-left: auto;
-      align-items: center
+      align-items: center;
+      position: relative
     }
 
     .btn {
@@ -191,6 +192,7 @@
     }
 
     #waste-panel,
+    #cycles-panel,
     #inspector {
       width: 290px;
       background: var(--panel-bg);
@@ -202,6 +204,11 @@
       overflow: hidden;
       transition: width .35s cubic-bezier(0.4, 0, 0.2, 1);
       z-index: 50
+    }
+
+    #cycles-panel {
+      width: 320px;
+      border-right: 1px solid var(--border)
     }
 
     #waste-panel {
@@ -544,23 +551,7 @@
     }
 
 
-    #cycles-panel {
-      width: 320px;
-      border-right: 1px solid var(--border)
-    }
 
-    #waste-panel,
-    #cycles-panel {
-      background: var(--panel-bg);
-      backdrop-filter: blur(18px);
-      -webkit-backdrop-filter: blur(18px);
-      display: flex;
-      flex-direction: column;
-      flex-shrink: 0;
-      overflow: hidden;
-      transition: width .35s cubic-bezier(0.4, 0, 0.2, 1);
-      z-index: 50
-    }
 
     #waste-panel.collapsed,
     #cycles-panel.collapsed {
