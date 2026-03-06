@@ -1325,12 +1325,21 @@
     if (hide) ELS['search-box'].classList.remove('open');
   }
 
-    function refreshViewportAfterShellChange() {
+  function refreshViewportAfterShellChange() {
     setTimeout(() => {
       resizeCanvas();
       scheduleRender();
     }, 320);
   }
+
+  function debugNodeCanvasPoint(id) {
+    const nid = normalizeId(id);
+    const pos = APP.layoutPositions.get(nid);
+    if (!pos) return null;
+    const screen = toScreen(pos.x, pos.y);
+    return { x: screen.x, y: screen.y };
+  }
+
   function wireUi() {
     ELS['btn-folder'].onclick = () => openFolder().catch((err) => toast(err.message || String(err)));
     ELS['btn-open'].onclick = () => ELS['file-input'].click();
@@ -1404,8 +1413,42 @@
 
     tryLoad();
     window.loadGraph = (data) => setGraphData(data, { source: 'manual' });
+    window.__orbitsDebug = {
+      get graphLoaded() { return !!APP.graph; },
+      get graphNodeCount() { return APP.graph?.nodes?.length ?? 0; },
+      get graphEdgeCount() { return APP.graph?.edges?.length ?? 0; },
+      get selectedNodeId() { return APP.state.selectedId; },
+      get visibleNodeCount() { return APP.renderModel?.renderNodes?.length ?? 0; },
+      get visibleEdgeCount() { return APP.renderModel?.renderEdges?.length ?? 0; },
+      get menuStates() {
+        return {
+          langOpen: ELS['lang-menu'].classList.contains('open'),
+          filterOpen: ELS['filter-panel'].classList.contains('open'),
+          layoutOpen: ELS['layout-menu'].classList.contains('open'),
+          searchOpen: ELS['search-box'].classList.contains('open')
+        };
+      },
+      get zoom() { return { x: APP.state.zoom.x, y: APP.state.zoom.y, k: APP.state.zoom.k }; },
+      get shellState() {
+        return {
+          leftRailCollapsed: ELS['left-rail'].classList.contains('collapsed'),
+          inspectorCollapsed: ELS['inspector'].classList.contains('collapsed')
+        };
+      },
+      get performanceState() {
+        return {
+          perfMode: APP.state.perfMode,
+          motionEnabled: APP.motionEnabled,
+          layoutMode: APP.state.layoutMode,
+          showFullGraph: APP.state.showFullGraph
+        };
+      },
+      getNodeCanvasPoint(id) { return debugNodeCanvasPoint(id); }
+    };
   }
 
   boot();
 })();
+
+
 

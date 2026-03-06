@@ -1,0 +1,136 @@
+{
+  "nodes": [
+    {
+      "id": "src/main.py",
+      "filepath": "src/main.py",
+      "name": "main.py",
+      "dir": "src",
+      "classification": "ENTRY",
+      "language": "python",
+      "size": 620,
+      "mtime": 1730000201,
+      "depth": 0,
+      "island_id": -1
+    },
+    {
+      "id": "web/api.js",
+      "filepath": "web/api.js",
+      "name": "api.js",
+      "dir": "web",
+      "classification": "CONNECTED",
+      "language": "javascript",
+      "size": 560,
+      "mtime": 1730000202,
+      "depth": 1,
+      "island_id": -1
+    },
+    {
+      "id": "engine/worker.go",
+      "filepath": "engine/worker.go",
+      "name": "worker.go",
+      "dir": "engine",
+      "classification": "CONNECTED",
+      "language": "go",
+      "size": 510,
+      "mtime": 1730000203,
+      "depth": 1,
+      "island_id": -1
+    },
+    {
+      "id": "native/engine.cpp",
+      "filepath": "native/engine.cpp",
+      "name": "engine.cpp",
+      "dir": "native",
+      "classification": "CONNECTED",
+      "language": "cpp",
+      "size": 770,
+      "mtime": 1730000204,
+      "depth": 2,
+      "island_id": -1
+    },
+    {
+      "id": "shared/util.ts",
+      "filepath": "shared/util.ts",
+      "name": "util.ts",
+      "dir": "shared",
+      "classification": "LEAF",
+      "language": "typescript",
+      "size": 330,
+      "mtime": 1730000205,
+      "depth": 2,
+      "island_id": -1
+    },
+    {
+      "id": "tests/test_engine.py",
+      "filepath": "tests/test_engine.py",
+      "name": "test_engine.py",
+      "dir": "tests",
+      "classification": "TEST",
+      "language": "python",
+      "size": 270,
+      "mtime": 1730000206,
+      "depth": 1,
+      "island_id": -1
+    }
+  ],
+  "edges": [
+    {
+      "source": "src/main.py",
+      "target": "web/api.js",
+      "line": 4
+    },
+    {
+      "source": "src/main.py",
+      "target": "engine/worker.go",
+      "line": 7
+    },
+    {
+      "source": "web/api.js",
+      "target": "shared/util.ts",
+      "line": 6
+    },
+    {
+      "source": "engine/worker.go",
+      "target": "native/engine.cpp",
+      "line": 10
+    },
+    {
+      "source": "tests/test_engine.py",
+      "target": "native/engine.cpp",
+      "line": 5
+    }
+  ],
+  "cycles": [],
+  "waste": [],
+  "summary": {
+    "counts": {
+      "ENTRY": 1,
+      "CONNECTED": 3,
+      "LEAF": 1,
+      "TEST": 1
+    },
+    "total": 6,
+    "cycle_count": 0,
+    "island_count": 0,
+    "max_depth": 2,
+    "health_score": 96,
+    "unreachable": 0
+  },
+  "meta": {
+    "elapsed_s": 0.24,
+    "languages": [
+      "cpp",
+      "go",
+      "javascript",
+      "python",
+      "typescript"
+    ],
+    "import_stats": {
+      "local": 5,
+      "stdlib": 2,
+      "external": 1,
+      "unknown": 0
+    },
+    "unsupported_languages": []
+  }
+}

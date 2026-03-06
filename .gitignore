@@ -70,3 +70,6 @@ __MACOSX/
 *.sqlite3
 .orbits_cache.json
 graph.json
+test-results/
+playwright-report/
+

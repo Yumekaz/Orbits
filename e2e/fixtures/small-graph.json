@@ -1,0 +1,124 @@
+{
+  "nodes": [
+    {
+      "id": "app/main.py",
+      "filepath": "app/main.py",
+      "name": "main.py",
+      "dir": "app",
+      "classification": "ENTRY",
+      "language": "python",
+      "size": 800,
+      "mtime": 1730000001,
+      "depth": 0,
+      "island_id": -1
+    },
+    {
+      "id": "lib/core.py",
+      "filepath": "lib/core.py",
+      "name": "core.py",
+      "dir": "lib",
+      "classification": "CONNECTED",
+      "language": "python",
+      "size": 620,
+      "mtime": 1730000002,
+      "depth": 1,
+      "island_id": -1
+    },
+    {
+      "id": "lib/util.py",
+      "filepath": "lib/util.py",
+      "name": "util.py",
+      "dir": "lib",
+      "classification": "LEAF",
+      "language": "python",
+      "size": 410,
+      "mtime": 1730000003,
+      "depth": 2,
+      "island_id": -1
+    },
+    {
+      "id": "tests/test_core.py",
+      "filepath": "tests/test_core.py",
+      "name": "test_core.py",
+      "dir": "tests",
+      "classification": "TEST",
+      "language": "python",
+      "size": 390,
+      "mtime": 1730000004,
+      "depth": 1,
+      "island_id": -1
+    },
+    {
+      "id": "dead/old.py",
+      "filepath": "dead/old.py",
+      "name": "old.py",
+      "dir": "dead",
+      "classification": "ORPHAN",
+      "language": "python",
+      "size": 120,
+      "mtime": 1730000005,
+      "depth": -1,
+      "island_id": -1
+    }
+  ],
+  "edges": [
+    {
+      "source": "app/main.py",
+      "target": "lib/core.py",
+      "line": 3
+    },
+    {
+      "source": "lib/core.py",
+      "target": "lib/util.py",
+      "line": 12
+    },
+    {
+      "source": "tests/test_core.py",
+      "target": "lib/core.py",
+      "line": 5
+    },
+    {
+      "source": "tests/test_core.py",
+      "target": "lib/util.py",
+      "line": 8
+    }
+  ],
+  "cycles": [],
+  "waste": [
+    {
+      "id": "dead/old.py",
+      "name": "old.py",
+      "classification": "ORPHAN",
+      "size": 120,
+      "island_id": -1
+    }
+  ],
+  "summary": {
+    "counts": {
+      "ENTRY": 1,
+      "CONNECTED": 1,
+      "LEAF": 1,
+      "TEST": 1,
+      "ORPHAN": 1
+    },
+    "total": 5,
+    "cycle_count": 0,
+    "island_count": 0,
+    "max_depth": 2,
+    "health_score": 92,
+    "unreachable": 1
+  },
+  "meta": {
+    "elapsed_s": 0.18,
+    "languages": [
+      "python"
+    ],
+    "import_stats": {
+      "local": 4,
+      "stdlib": 2,
+      "external": 0,
+      "unknown": 1
+    },
+    "unsupported_languages": []
+  }
+}

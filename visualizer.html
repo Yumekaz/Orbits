@@ -949,7 +949,7 @@
   <div id="app">
     <div id="topbar">
       <div class="tb-logo">ORBITS<span>.</span></div>
-      <div id="tb-stats">
+      <div id="tb-stats" data-testid="stats-bar">
         <div class="tb-group">
           <div class="tb-stat" title="Total Files"><span class="tv cv" id="s-files">—</span><span
               class="tl">Files</span></div>
@@ -976,20 +976,20 @@
         </div>
       </div>
       <div id="tb-controls">
-        <button class="btn" id="btn-folder">folder</button>
-        <button class="btn on" id="btn-waste">waste</button>
-        <button class="btn on" id="btn-cycles">cycles</button>
-        <button class="btn on" id="btn-insp">inspector</button>
-        <button class="btn" id="btn-cluster">view</button>
-        <button class="btn" id="btn-filter">filter</button>
-        <button class="btn" id="btn-lang">languages</button>
-        <button class="btn" id="btn-search">search</button>
-        <button class="btn" id="btn-reset">reset</button>
+        <button class="btn" id="btn-folder" data-testid="btn-folder">folder</button>
+        <button class="btn on" id="btn-waste" data-testid="btn-waste">waste</button>
+        <button class="btn on" id="btn-cycles" data-testid="btn-cycles">cycles</button>
+        <button class="btn on" id="btn-insp" data-testid="btn-inspector">inspector</button>
+        <button class="btn" id="btn-cluster" data-testid="btn-view">view</button>
+        <button class="btn" id="btn-filter" data-testid="btn-filter">filter</button>
+        <button class="btn" id="btn-lang" data-testid="btn-languages">languages</button>
+        <button class="btn" id="btn-search" data-testid="btn-search">search</button>
+        <button class="btn" id="btn-reset" data-testid="btn-reset">reset</button>
       </div>
     </div>
 
   <div id="main">
-    <div id="left-rail">
+    <div id="left-rail" data-testid="left-rail">
       <div id="left-tabs">
         <div class="left-tab active" data-left-panel="waste-panel">dead <span class="badge" id="waste-badge">0</span>
         </div>
@@ -1014,18 +1014,18 @@
       </div>
     </div>
 
-    <div id="canvas-wrap">
+    <div id="canvas-wrap" data-testid="canvas-wrap">
       <div id="worker-status">
         <div id="worker-message">Analyzing...</div>
         <div id="worker-bar">
           <div></div>
         </div>
       </div>
-      <div id="warning-banner">
-        <div class="warning-copy" id="warning-copy"></div><button class="warning-dismiss"
+      <div id="warning-banner" data-testid="warning-banner">
+        <div class="warning-copy" id="warning-copy"></div><button class="warning-dismiss" data-testid="warning-dismiss"
           id="warning-dismiss">dismiss</button>
       </div>
-      <div id="search-box"><input id="search-input" type="text" placeholder="Search files...">
+      <div id="search-box" data-testid="search-box"><input id="search-input" data-testid="search-input" type="text" placeholder="Search files...">
         <div id="search-help"><span>/ or Ctrl+K</span><span>Enter focus • Esc clear</span></div>
         <div id="search-status" style="font-size:9px;color:var(--cyan);margin-top:8px;min-height:12px"></div>
       </div>
@@ -1040,15 +1040,15 @@
         <button class="btn on" id="btn-open" style="padding:10px 30px">OPEN GRAPH FILE</button>
         <input type="file" id="file-input" accept=".json" style="display:none">
       </div>
-      <canvas id="graph-canvas"></canvas>
-      <canvas id="minimap" width="190" height="124"></canvas>
-      <div id="health-pill" class="hidden">Project Health <span>—</span>/100 &nbsp; <small id="perf-mode"
+      <canvas id="graph-canvas" data-testid="graph-canvas"></canvas>
+      <canvas id="minimap" data-testid="minimap" width="190" height="124"></canvas>
+      <div id="health-pill" data-testid="health-pill" class="hidden">Project Health <span>—</span>/100 &nbsp; <small id="perf-mode"
           style="font-size:9px;opacity:0.72">Perf AUTO</small> &nbsp; <small id="elapsed"
           style="font-size:9px;opacity:0.5"></small></div>
       <div id="toast"></div>
     </div>
 
-    <div id="inspector">
+    <div id="inspector" data-testid="inspector">
       <div class="is-pane">
         <div class="is-label">Selected File</div>
         <div id="ip" style="color:var(--dim);font-style:italic;font-size:11px">Click any node to inspect</div>
@@ -1127,6 +1127,7 @@
 </body>
 
 </html>
+
 
 
 

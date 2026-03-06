@@ -5,5 +5,12 @@
   "dependencies": {
     "cytoscape": "^3.33.1",
     "d3": "^7.9.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.58.2"
+  },
+  "scripts": {
+    "test:e2e": "playwright test",
+    "test:e2e:visual": "playwright test e2e/visual.spec.ts"
   }
 }

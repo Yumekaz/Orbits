@@ -1,0 +1,148 @@
+{
+  "nodes": [
+    {
+      "id": "src/a.py",
+      "filepath": "src/a.py",
+      "name": "a.py",
+      "dir": "src",
+      "classification": "ENTRY",
+      "language": "python",
+      "size": 530,
+      "mtime": 1730000101,
+      "depth": 0,
+      "island_id": -1
+    },
+    {
+      "id": "src/b.py",
+      "filepath": "src/b.py",
+      "name": "b.py",
+      "dir": "src",
+      "classification": "CONNECTED",
+      "language": "python",
+      "size": 510,
+      "mtime": 1730000102,
+      "depth": 1,
+      "island_id": -1
+    },
+    {
+      "id": "src/c.py",
+      "filepath": "src/c.py",
+      "name": "c.py",
+      "dir": "src",
+      "classification": "CONNECTED",
+      "language": "python",
+      "size": 500,
+      "mtime": 1730000103,
+      "depth": 2,
+      "island_id": -1
+    },
+    {
+      "id": "src/helper.py",
+      "filepath": "src/helper.py",
+      "name": "helper.py",
+      "dir": "src",
+      "classification": "LEAF",
+      "language": "python",
+      "size": 300,
+      "mtime": 1730000104,
+      "depth": 2,
+      "island_id": -1
+    },
+    {
+      "id": "tests/test_a.py",
+      "filepath": "tests/test_a.py",
+      "name": "test_a.py",
+      "dir": "tests",
+      "classification": "TEST",
+      "language": "python",
+      "size": 280,
+      "mtime": 1730000105,
+      "depth": 1,
+      "island_id": -1
+    },
+    {
+      "id": "dead/orphan.py",
+      "filepath": "dead/orphan.py",
+      "name": "orphan.py",
+      "dir": "dead",
+      "classification": "ORPHAN",
+      "language": "python",
+      "size": 140,
+      "mtime": 1730000106,
+      "depth": -1,
+      "island_id": -1
+    }
+  ],
+  "edges": [
+    {
+      "source": "src/a.py",
+      "target": "src/b.py",
+      "line": 3
+    },
+    {
+      "source": "src/b.py",
+      "target": "src/c.py",
+      "line": 7
+    },
+    {
+      "source": "src/c.py",
+      "target": "src/a.py",
+      "line": 11
+    },
+    {
+      "source": "src/helper.py",
+      "target": "src/b.py",
+      "line": 4
+    },
+    {
+      "source": "tests/test_a.py",
+      "target": "src/a.py",
+      "line": 5
+    }
+  ],
+  "cycles": [
+    [
+      "src/a.py",
+      "src/b.py",
+      "src/c.py",
+      "src/a.py"
+    ]
+  ],
+  "waste": [
+    {
+      "id": "dead/orphan.py",
+      "name": "orphan.py",
+      "classification": "ORPHAN",
+      "size": 140,
+      "island_id": -1
+    }
+  ],
+  "summary": {
+    "counts": {
+      "ENTRY": 1,
+      "CONNECTED": 2,
+      "LEAF": 1,
+      "TEST": 1,
+      "ORPHAN": 1
+    },
+    "total": 6,
+    "cycle_count": 1,
+    "island_count": 0,
+    "max_depth": 2,
+    "health_score": 86,
+    "unreachable": 1
+  },
+  "meta": {
+    "elapsed_s": 0.21,
+    "languages": [
+      "python"
+    ],
+    "import_stats": {
+      "local": 5,
+      "stdlib": 1,
+      "external": 0,
+      "unknown": 0
+    },
+    "unsupported_languages": []
+  }
+}
