@@ -107,8 +107,20 @@ def classify_nodes(
             result[nid] = NodeClass.TEST
             continue
 
+    # Clean inbound edges: ignore imports from TEST or GENERATED nodes
+    clean_inbound = {}
+    for nid in node_ids:
+        clean_inbound[nid] = {
+            src for src in inbound[nid]
+            if result.get(src) not in (NodeClass.TEST, NodeClass.GENERATED)
+        }
+
+    for nid in node_ids:
+        if nid in result: # Already classified as TEST or GENERATED
+            continue
+
         has_out = bool(outbound[nid])
-        has_in  = bool(inbound[nid])
+        has_in  = bool(clean_inbound[nid])
 
         if not has_in and not has_out:
             result[nid] = NodeClass.ORPHAN

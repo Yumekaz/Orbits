@@ -174,6 +174,7 @@ def extract_all(root: Path, verbose: bool = True) -> dict:
                 'name': filepath.name,
                 'language': lang,
                 'size': stat.st_size,
+                'mtime': round(stat.st_mtime),
                 'dir': str(filepath.parent.relative_to(root)) if filepath.parent != root else '.',
             }
 

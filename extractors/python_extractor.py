@@ -84,8 +84,14 @@ class PythonExtractor(BaseExtractor):
         except Exception:
             return ExtractResult(syntax_error=True)
 
+        def walk(n):
+            if n.type in ('import_statement', 'import_from_statement'):
+                yield n
+            for child in n.named_children:
+                yield from walk(child)
+
         imports: list[RawImport] = []
-        for statement in tree.root_node.named_children:
+        for statement in walk(tree.root_node):
             if statement.type == 'import_statement':
                 for name_node in _import_name_nodes(statement):
                     name = _extract_import_name(name_node)

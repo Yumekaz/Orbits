@@ -372,15 +372,16 @@ def _find_on_disk(
                 except ValueError: pass
 
         # Single-part module: utils/__init__.py or utils.py
-        top_pkg = base / parts[0] / '__init__.py'
-        if top_pkg.exists():
-            try: return str(top_pkg.relative_to(root))
-            except ValueError: pass
+        if len(parts) == 1:
+            top_pkg = base / parts[0] / '__init__.py'
+            if top_pkg.exists():
+                try: return str(top_pkg.relative_to(root))
+                except ValueError: pass
 
-        top_mod = base / (parts[0] + '.py')
-        if top_mod.exists():
-            try: return str(top_mod.relative_to(root))
-            except ValueError: pass
+            top_mod = base / (parts[0] + '.py')
+            if top_mod.exists():
+                try: return str(top_mod.relative_to(root))
+                except ValueError: pass
 
         # Namespace package: directory exists, no __init__.py
         # PEP 420 — treat as valid if it contains any .py files
