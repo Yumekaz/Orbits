@@ -254,6 +254,17 @@
       "island_id": -1
     },
     {
+      "id": "test_repo\\foo.py",
+      "filepath": "test_repo\\foo.py",
+      "name": "foo.py",
+      "language": "python",
+      "size": 11,
+      "dir": "test_repo",
+      "classification": "TEST",
+      "depth": -1,
+      "island_id": -1
+    },
+    {
       "id": "tests\\test_analyzer_behavior.py",
       "filepath": "tests\\test_analyzer_behavior.py",
       "name": "test_analyzer_behavior.py",
@@ -296,6 +307,39 @@
       "classification": "TEST",
       "depth": -1,
       "island_id": 0
+    },
+    {
+      "id": "test_repo\\bar.js",
+      "filepath": "test_repo\\bar.js",
+      "name": "bar.js",
+      "language": "javascript",
+      "size": 19,
+      "dir": "test_repo",
+      "classification": "TEST",
+      "depth": -1,
+      "island_id": -1
+    },
+    {
+      "id": "test_repo\\baz.cpp",
+      "filepath": "test_repo\\baz.cpp",
+      "name": "baz.cpp",
+      "language": "cpp",
+      "size": 21,
+      "dir": "test_repo",
+      "classification": "TEST",
+      "depth": -1,
+      "island_id": -1
+    },
+    {
+      "id": "test_repo\\main.go",
+      "filepath": "test_repo\\main.go",
+      "name": "main.go",
+      "language": "go",
+      "size": 14,
+      "dir": "test_repo",
+      "classification": "TEST",
+      "depth": -1,
+      "island_id": -1
     }
   ],
   "edges": [
@@ -465,15 +509,15 @@
   "islands": [
     [
       "analyzer.py",
-      "tests\\test_smoke.py",
+      "lang_dispatch.py",
       "tests\\test_analyzer_behavior.py",
       "graph_engine.py",
-      "lang_dispatch.py",
-      "cache.py",
+      "tests\\test_smoke.py",
       "worker.py",
-      "tests\\test_multilang.py",
       "crawler.py",
-      "tests\\test_python_resolution.py"
+      "tests\\test_python_resolution.py",
+      "cache.py",
+      "tests\\test_multilang.py"
     ]
   ],
   "waste": [
@@ -568,32 +612,35 @@
       "ENTRY": 8,
       "LEAF": 3,
       "ORPHAN": 6,
-      "TEST": 4
+      "TEST": 8
     },
-    "total": 27,
+    "total": 31,
     "cycle_count": 0,
     "island_count": 1,
     "max_depth": 1,
-    "health_score": 84,
-    "unreachable": 16
+    "health_score": 86,
+    "unreachable": 20
   },
   "meta": {
     "root": "C:\\Users\\Mihir\\OneDrive\\Desktop\\orbits",
-    "total_files": 27,
+    "total_files": 31,
     "total_edges": 23,
     "languages": [
-      "python"
+      "python",
+      "javascript",
+      "cpp",
+      "go"
     ],
     "import_stats": {
       "local": 57,
-      "stdlib": 139,
+      "stdlib": 141,
       "third_party": 0,
       "external": 0,
       "unknown": 0
     },
     "package_name": "",
     "phase": 3,
-    "elapsed_s": 0.1,
+    "elapsed_s": 0.35,
     "language_support": {
       "python": {
         "available": true,

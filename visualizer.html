@@ -5,6 +5,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Orbits. ⬡</title>
+  <link rel="icon"
+    href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⬡</text></svg>">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Syne:wght@400;600;700;800&display=swap');
@@ -542,39 +544,249 @@
     }
 
 
-    #cycles-panel { width: 320px; border-right: 1px solid var(--border) }
-    #waste-panel, #cycles-panel { background: var(--panel-bg); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); display: flex; flex-direction: column; flex-shrink: 0; overflow: hidden; transition: width .35s cubic-bezier(0.4, 0, 0.2, 1); z-index: 50 }
-    #waste-panel.collapsed, #cycles-panel.collapsed { width: 0; border: none }
-    .mini-btn { background: rgba(255,255,255,.04); border: 1px solid var(--border); color: var(--muted); font-family: 'JetBrains Mono', monospace; font-size: 9px; padding: 6px 10px; cursor: pointer; border-radius: 4px; letter-spacing: .06em; text-transform: uppercase }
-    .mini-btn:hover, .mini-btn.on { border-color: var(--cyan); color: var(--cyan); background: rgba(0,229,255,.08) }
-    #lang-menu { position: absolute; top: 48px; right: 14px; width: 260px; background: rgba(7,9,18,.96); border: 1px solid var(--border); border-radius: 8px; padding: 12px; display: none; z-index: 150; box-shadow: 0 16px 40px rgba(0,0,0,.45) }
-    #lang-menu.open { display: block }
-    .menu-title { font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--text-hi); opacity: .7; margin-bottom: 10px }
-    .menu-actions, .chip-grid { display: flex; flex-wrap: wrap; gap: 8px }
-    .menu-actions { margin-bottom: 12px }
-    .toggle-chip { padding: 6px 10px; border-radius: 999px; border: 1px solid var(--border); background: rgba(255,255,255,.03); color: var(--muted); font-size: 10px; cursor: pointer; transition: all .2s ease }
-    .toggle-chip.on { color: var(--text-hi); background: rgba(255,255,255,.08) }
-    .pv { color: var(--purple) }
-    .cycle-item { padding: 12px 20px; border-left: 3px solid transparent }
-    .cycle-item:hover { background: rgba(255,255,255,.03) }
-    .cycle-title { font-size: 9px; letter-spacing: .12em; color: var(--amber); text-transform: uppercase; margin-bottom: 8px }
-    .cycle-path { display: flex; flex-wrap: wrap; gap: 6px; align-items: center }
-    .cycle-node { padding: 4px 8px; border: 1px solid rgba(255,170,0,.25); border-radius: 999px; color: var(--text-hi); cursor: pointer; background: rgba(255,170,0,.06); font-size: 10px }
-    .cycle-node:hover { border-color: var(--amber); color: var(--amber) }
-    .cycle-arrow { color: var(--dim); font-size: 10px }
-    .chip.cycle { border-left: 3px solid var(--amber) }
-    .v.purple { color: var(--purple) }
-    #search-box { position: absolute; top: 20px; right: 24px; width: 320px; background: rgba(7,9,18,.96); border: 1px solid var(--border); border-radius: 10px; padding: 10px; z-index: 120; display: none; box-shadow: 0 20px 40px rgba(0,0,0,.35) }
-    #search-box.open { display: block }
-    #search-input { width: 100%; background: rgba(255,255,255,.04); border: 1px solid var(--border); border-radius: 6px; color: var(--text-hi); padding: 10px 12px; font-family: 'JetBrains Mono', monospace; font-size: 12px; outline: none }
-    #search-input:focus { border-color: var(--cyan) }
-    #search-help { font-size: 9px; color: var(--muted); margin-top: 8px; display: flex; justify-content: space-between; gap: 10px }
-    #warning-banner { position: absolute; top: 18px; left: 24px; right: 380px; background: rgba(255,200,87,.1); border: 1px solid rgba(255,200,87,.3); color: #ffc857; border-radius: 8px; padding: 12px 14px; z-index: 110; display: none; align-items: flex-start; justify-content: space-between; gap: 12px; box-shadow: 0 16px 30px rgba(0,0,0,.25) }
-    #warning-banner.show { display: flex }
-    .warning-copy { font-size: 11px; line-height: 1.5 }
-    .warning-copy code { color: #fff2c4; background: rgba(0,0,0,.22); padding: 2px 6px; border-radius: 4px }
-    .warning-dismiss { border: 1px solid rgba(255,200,87,.3); background: transparent; color: #ffc857; border-radius: 4px; padding: 6px 8px; cursor: pointer; font-size: 10px; text-transform: uppercase; letter-spacing: .08em; flex-shrink: 0 }
+    #cycles-panel {
+      width: 320px;
+      border-right: 1px solid var(--border)
+    }
 
+    #waste-panel,
+    #cycles-panel {
+      background: var(--panel-bg);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      overflow: hidden;
+      transition: width .35s cubic-bezier(0.4, 0, 0.2, 1);
+      z-index: 50
+    }
+
+    #waste-panel.collapsed,
+    #cycles-panel.collapsed {
+      width: 0;
+      border: none
+    }
+
+    .mini-btn {
+      background: rgba(255, 255, 255, .04);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 9px;
+      padding: 6px 10px;
+      cursor: pointer;
+      border-radius: 4px;
+      letter-spacing: .06em;
+      text-transform: uppercase
+    }
+
+    .mini-btn:hover,
+    .mini-btn.on {
+      border-color: var(--cyan);
+      color: var(--cyan);
+      background: rgba(0, 229, 255, .08)
+    }
+
+    #lang-menu {
+      position: absolute;
+      top: 48px;
+      right: 14px;
+      width: 260px;
+      background: rgba(7, 9, 18, .96);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+      display: none;
+      z-index: 150;
+      box-shadow: 0 16px 40px rgba(0, 0, 0, .45)
+    }
+
+    #lang-menu.open {
+      display: block
+    }
+
+    .menu-title {
+      font-size: 10px;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+      color: var(--text-hi);
+      opacity: .7;
+      margin-bottom: 10px
+    }
+
+    .menu-actions,
+    .chip-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px
+    }
+
+    .menu-actions {
+      margin-bottom: 12px
+    }
+
+    .toggle-chip {
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, .03);
+      color: var(--muted);
+      font-size: 10px;
+      cursor: pointer;
+      transition: all .2s ease
+    }
+
+    .toggle-chip.on {
+      color: var(--text-hi);
+      background: rgba(255, 255, 255, .08)
+    }
+
+    .pv {
+      color: var(--purple)
+    }
+
+    .cycle-item {
+      padding: 12px 20px;
+      border-left: 3px solid transparent
+    }
+
+    .cycle-item:hover {
+      background: rgba(255, 255, 255, .03)
+    }
+
+    .cycle-title {
+      font-size: 9px;
+      letter-spacing: .12em;
+      color: var(--amber);
+      text-transform: uppercase;
+      margin-bottom: 8px
+    }
+
+    .cycle-path {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center
+    }
+
+    .cycle-node {
+      padding: 4px 8px;
+      border: 1px solid rgba(255, 170, 0, .25);
+      border-radius: 999px;
+      color: var(--text-hi);
+      cursor: pointer;
+      background: rgba(255, 170, 0, .06);
+      font-size: 10px
+    }
+
+    .cycle-node:hover {
+      border-color: var(--amber);
+      color: var(--amber)
+    }
+
+    .cycle-arrow {
+      color: var(--dim);
+      font-size: 10px
+    }
+
+    .chip.cycle {
+      border-left: 3px solid var(--amber)
+    }
+
+    .v.purple {
+      color: var(--purple)
+    }
+
+    #search-box {
+      position: absolute;
+      top: 20px;
+      right: 24px;
+      width: 320px;
+      background: rgba(7, 9, 18, .96);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px;
+      z-index: 120;
+      display: none;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, .35)
+    }
+
+    #search-box.open {
+      display: block
+    }
+
+    #search-input {
+      width: 100%;
+      background: rgba(255, 255, 255, .04);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text-hi);
+      padding: 10px 12px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      outline: none
+    }
+
+    #search-input:focus {
+      border-color: var(--cyan)
+    }
+
+    #search-help {
+      font-size: 9px;
+      color: var(--muted);
+      margin-top: 8px;
+      display: flex;
+      justify-content: space-between;
+      gap: 10px
+    }
+
+    #warning-banner {
+      position: absolute;
+      top: 18px;
+      left: 24px;
+      right: 380px;
+      background: rgba(255, 200, 87, .1);
+      border: 1px solid rgba(255, 200, 87, .3);
+      color: #ffc857;
+      border-radius: 8px;
+      padding: 12px 14px;
+      z-index: 110;
+      display: none;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      box-shadow: 0 16px 30px rgba(0, 0, 0, .25)
+    }
+
+    #warning-banner.show {
+      display: flex
+    }
+
+    .warning-copy {
+      font-size: 11px;
+      line-height: 1.5
+    }
+
+    .warning-copy code {
+      color: #fff2c4;
+      background: rgba(0, 0, 0, .22);
+      padding: 2px 6px;
+      border-radius: 4px
+    }
+
+    .warning-dismiss {
+      border: 1px solid rgba(255, 200, 87, .3);
+      background: transparent;
+      color: #ffc857;
+      border-radius: 4px;
+      padding: 6px 8px;
+      cursor: pointer;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      flex-shrink: 0
+    }
   </style>
 </head>
 
@@ -584,19 +796,28 @@
       <div class="tb-logo">ORBITS<span>.</span></div>
       <div id="tb-stats">
         <div class="tb-group">
-          <div class="tb-stat" title="Total Files"><span class="tv cv" id="s-files">—</span><span class="tl">Files</span></div>
-          <div class="tb-stat" title="Dependencies"><span class="tv ev" id="s-edges">—</span><span class="tl">Edges</span></div>
-          <div class="tb-stat" title="Dead Files"><span class="tv ov" id="s-orphans">—</span><span class="tl">Dead</span></div>
+          <div class="tb-stat" title="Total Files"><span class="tv cv" id="s-files">—</span><span
+              class="tl">Files</span></div>
+          <div class="tb-stat" title="Dependencies"><span class="tv ev" id="s-edges">—</span><span
+              class="tl">Edges</span></div>
+          <div class="tb-stat" title="Dead Files"><span class="tv ov" id="s-orphans">—</span><span
+              class="tl">Dead</span></div>
         </div>
         <div class="tb-group">
-          <div class="tb-stat" title="Circular Deps"><span class="tv yv" id="s-cycles">—</span><span class="tl">Cycles</span></div>
-          <div class="tb-stat" title="Code Health"><span class="tv gv" id="s-health">—</span><span class="tl">Health</span></div>
-          <div class="tb-stat" title="Unreachable Files"><span class="tv pv" id="s-unreachable">—</span><span class="tl">Unreachable</span></div>
-          <div class="tb-stat" title="Deepest Dependency Chain"><span class="tv ev" id="s-max-depth">—</span><span class="tl">Max Depth</span></div>
+          <div class="tb-stat" title="Circular Deps"><span class="tv yv" id="s-cycles">—</span><span
+              class="tl">Cycles</span></div>
+          <div class="tb-stat" title="Code Health"><span class="tv gv" id="s-health">—</span><span
+              class="tl">Health</span></div>
+          <div class="tb-stat" title="Unreachable Files"><span class="tv pv" id="s-unreachable">—</span><span
+              class="tl">Unreachable</span></div>
+          <div class="tb-stat" title="Deepest Dependency Chain"><span class="tv ev" id="s-max-depth">—</span><span
+              class="tl">Max Depth</span></div>
         </div>
         <div class="tb-group">
-          <div class="tb-stat" id="stat-res" title="Resolution Rate"><span class="tv" id="s-resolved">—</span><span class="tl">Resolved</span></div>
-          <div class="tb-stat" id="stat-langs" title="Languages"><span class="tv" id="s-langs">—</span><span class="tl">Langs</span></div>
+          <div class="tb-stat" id="stat-res" title="Resolution Rate"><span class="tv" id="s-resolved">—</span><span
+              class="tl">Resolved</span></div>
+          <div class="tb-stat" id="stat-langs" title="Languages"><span class="tv" id="s-langs">—</span><span
+              class="tl">Langs</span></div>
         </div>
       </div>
       <div id="tb-controls">
@@ -608,41 +829,121 @@
         <button class="btn" id="btn-lang">languages</button>
         <button class="btn" id="btn-search">search</button>
         <button class="btn" id="btn-reset">reset</button>
-        <div id="lang-menu"><div class="menu-title">Language Filter</div><div class="menu-actions"><button class="mini-btn" id="lang-all">all</button><button class="mini-btn" id="lang-none">none</button></div><div class="chip-grid" id="lang-chip-grid"></div></div>
+        <div id="lang-menu">
+          <div class="menu-title">Language Filter</div>
+          <div class="menu-actions"><button class="mini-btn" id="lang-all">all</button><button class="mini-btn"
+              id="lang-none">none</button></div>
+          <div class="chip-grid" id="lang-chip-grid"></div>
+        </div>
       </div>
     </div>
 
     <div id="main">
       <div id="waste-panel">
-        <div class="section-header"><span class="sh-title">Dead Files</span><span class="badge" id="waste-badge">0</span></div>
-        <div id="waste-list" class="list-cont"><div style="padding:40px;text-align:center;color:var(--dim)">⬡<br>Scan a project to analyze waste</div></div>
+        <div class="section-header"><span class="sh-title">Dead Files</span><span class="badge"
+            id="waste-badge">0</span></div>
+        <div id="waste-list" class="list-cont">
+          <div style="padding:40px;text-align:center;color:var(--dim)">⬡<br>Scan a project to analyze waste</div>
+        </div>
       </div>
 
       <div id="cycles-panel">
-        <div class="section-header"><span class="sh-title">Cycles</span><div style="display:flex;align-items:center;gap:10px"><button class="mini-btn" id="btn-cycle-highlight">highlight</button><span class="badge" id="cycle-badge">0</span></div></div>
-        <div id="cycle-list" class="list-cont"><div style="padding:40px;text-align:center;color:var(--dim)">No cycle data loaded</div></div>
+        <div class="section-header"><span class="sh-title">Cycles</span>
+          <div style="display:flex;align-items:center;gap:10px"><button class="mini-btn"
+              id="btn-cycle-highlight">highlight</button><span class="badge" id="cycle-badge">0</span></div>
+        </div>
+        <div id="cycle-list" class="list-cont">
+          <div style="padding:40px;text-align:center;color:var(--dim)">No cycle data loaded</div>
+        </div>
       </div>
 
       <div id="canvas-wrap">
-        <div id="warning-banner"><div class="warning-copy" id="warning-copy"></div><button class="warning-dismiss" id="warning-dismiss">dismiss</button></div>
-        <div id="search-box"><input id="search-input" type="text" placeholder="Search files..."><div id="search-help"><span>/ or Ctrl+K</span><span>Enter focus • Esc clear</span></div></div>
+        <div id="warning-banner">
+          <div class="warning-copy" id="warning-copy"></div><button class="warning-dismiss"
+            id="warning-dismiss">dismiss</button>
+        </div>
+        <div id="search-box"><input id="search-input" type="text" placeholder="Search files...">
+          <div id="search-help"><span>/ or Ctrl+K</span><span>Enter focus • Esc clear</span></div>
+        </div>
         <div id="drop-overlay">
-          <div class="drop-box"><span class="drop-icon">⬡</span><div class="drop-title">ORBITS.</div><div class="drop-text">Start the analyzer to begin:<br><code>python analyzer.py /project --serve</code><br><br>or drop a <code>graph.json</code> here</div></div>
+          <div class="drop-box"><span class="drop-icon">⬡</span>
+            <div class="drop-title">ORBITS.</div>
+            <div class="drop-text">Start the analyzer to
+              begin:<br><code>python analyzer.py /project --serve</code><br><br>or drop a <code>graph.json</code> here
+            </div>
+          </div>
           <div style="color:var(--dim);font-size:10px">OR</div>
           <button class="btn on" id="btn-open" style="padding:10px 30px">OPEN GRAPH FILE</button>
           <input type="file" id="file-input" accept=".json" style="display:none">
         </div>
-        <svg id="graph"><defs><marker id="arr" viewBox="0 -4 8 8" refX="15" refY="0" markerWidth="5" markerHeight="5" orient="auto"><path d="M0,-4L8,0L0,4" fill="rgba(31,37,64,0.8)" /></marker><marker id="arr-hi" viewBox="0 -4 8 8" refX="15" refY="0" markerWidth="5" markerHeight="5" orient="auto"><path d="M0,-4L8,0L0,4" fill="rgba(0,229,255,0.8)" /></marker><marker id="arr-cycle" viewBox="0 -4 8 8" refX="15" refY="0" markerWidth="5" markerHeight="5" orient="auto"><path d="M0,-4L8,0L0,4" fill="rgba(255,170,0,0.8)" /></marker></defs><g id="zoom-layer"><g id="links-layer"></g><g id="nodes-layer"></g></g></svg>
-        <div id="health-pill" class="hidden">Project Health <span>—</span>/100 &nbsp; <small id="elapsed" style="font-size:9px;opacity:0.5"></small></div>
+        <svg id="graph">
+          <defs>
+            <marker id="arr" viewBox="0 -4 8 8" refX="15" refY="0" markerWidth="5" markerHeight="5" orient="auto">
+              <path d="M0,-4L8,0L0,4" fill="rgba(31,37,64,0.8)" />
+            </marker>
+            <marker id="arr-hi" viewBox="0 -4 8 8" refX="15" refY="0" markerWidth="5" markerHeight="5" orient="auto">
+              <path d="M0,-4L8,0L0,4" fill="rgba(0,229,255,0.8)" />
+            </marker>
+            <marker id="arr-cycle" viewBox="0 -4 8 8" refX="15" refY="0" markerWidth="5" markerHeight="5" orient="auto">
+              <path d="M0,-4L8,0L0,4" fill="rgba(255,170,0,0.8)" />
+            </marker>
+          </defs>
+          <g id="zoom-layer">
+            <g id="links-layer"></g>
+            <g id="nodes-layer"></g>
+          </g>
+        </svg>
+        <div id="health-pill" class="hidden">Project Health <span>—</span>/100 &nbsp; <small id="elapsed"
+            style="font-size:9px;opacity:0.5"></small></div>
         <div id="toast"></div>
       </div>
 
       <div id="inspector">
-        <div class="is-pane"><div class="is-label">Selected File</div><div id="ip" style="color:var(--dim);font-style:italic;font-size:11px">Click any node to inspect</div><div id="ic" style="display:none"><div class="is-val-hero" id="iname"></div><div id="imeta"></div></div></div>
-        <div class="is-pane"><div class="is-label">Cycle Membership</div><div id="icycle" style="color:var(--dim);font-size:10px">No cycle selected</div></div>
-        <div class="is-pane"><div class="is-label">Imports (Outbound)</div><div id="iout"></div></div>
-        <div class="is-pane"><div class="is-label">Imported By (Inbound)</div><div id="iin"></div></div>
-        <div class="is-pane"><div class="is-label">Legend</div><div class="leg" style="display:flex;flex-direction:column;gap:10px"><div class="lr" style="display:flex;align-items:center;gap:10px;font-size:11px;color:var(--text);opacity:0.8"><div class="item-dot" style="background:var(--cyan);margin-top:0"></div>Connected file</div><div class="lr" style="display:flex;align-items:center;gap:10px;font-size:11px;color:var(--text);opacity:0.8"><div class="item-dot" style="background:var(--green);margin-top:0"></div>Entry point</div><div class="lr" style="display:flex;align-items:center;gap:10px;font-size:11px;color:var(--text);opacity:0.8"><div class="item-dot" style="background:var(--amber);margin-top:0"></div>Leaf or cycle node</div><div class="lr" style="display:flex;align-items:center;gap:10px;font-size:11px;color:var(--text);opacity:0.8"><div class="item-dot" style="background:var(--red);margin-top:0"></div>Dead / Orphan</div><div class="lr" style="display:flex;align-items:center;gap:10px;font-size:11px;color:var(--text);opacity:0.8"><div class="item-dot" style="background:var(--purple);margin-top:0"></div>Isolated cluster</div></div></div>
+        <div class="is-pane">
+          <div class="is-label">Selected File</div>
+          <div id="ip" style="color:var(--dim);font-style:italic;font-size:11px">Click any node to inspect</div>
+          <div id="ic" style="display:none">
+            <div class="is-val-hero" id="iname"></div>
+            <div id="imeta"></div>
+          </div>
+        </div>
+        <div class="is-pane">
+          <div class="is-label">Cycle Membership</div>
+          <div id="icycle" style="color:var(--dim);font-size:10px">No cycle selected</div>
+        </div>
+        <div class="is-pane">
+          <div class="is-label">Imports (Outbound)</div>
+          <div id="iout"></div>
+        </div>
+        <div class="is-pane">
+          <div class="is-label">Imported By (Inbound)</div>
+          <div id="iin"></div>
+        </div>
+        <div class="is-pane">
+          <div class="is-label">Legend</div>
+          <div class="leg" style="display:flex;flex-direction:column;gap:10px">
+            <div class="lr"
+              style="display:flex;align-items:center;gap:10px;font-size:11px;color:var(--text);opacity:0.8">
+              <div class="item-dot" style="background:var(--cyan);margin-top:0"></div>Connected file
+            </div>
+            <div class="lr"
+              style="display:flex;align-items:center;gap:10px;font-size:11px;color:var(--text);opacity:0.8">
+              <div class="item-dot" style="background:var(--green);margin-top:0"></div>Entry point
+            </div>
+            <div class="lr"
+              style="display:flex;align-items:center;gap:10px;font-size:11px;color:var(--text);opacity:0.8">
+              <div class="item-dot" style="background:var(--amber);margin-top:0"></div>Leaf or cycle node
+            </div>
+            <div class="lr"
+              style="display:flex;align-items:center;gap:10px;font-size:11px;color:var(--text);opacity:0.8">
+              <div class="item-dot" style="background:var(--red);margin-top:0"></div>Dead / Orphan
+            </div>
+            <div class="lr"
+              style="display:flex;align-items:center;gap:10px;font-size:11px;color:var(--text);opacity:0.8">
+              <div class="item-dot" style="background:var(--purple);margin-top:0"></div>Isolated cluster
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -661,19 +962,23 @@
       ISLAND: { f: 'rgba(176,111,255,0.1)', s: '#b06fff' },
       TEST: { f: 'rgba(61,74,112,0.1)', s: '#3d4a70' }
     };
-    const LANG_COLORS = { python:'#3b82f6', javascript:'#f59e0b', typescript:'#06b6d4', tsx:'#22d3ee', go:'#10b981', c:'#fb7185', cpp:'#f97316', java:'#ef4444', kotlin:'#a855f7', generic:'#6b7280' };
-    const PKG_HINTS = { python:['tree-sitter-python'], javascript:['tree-sitter-javascript','tree-sitter-typescript'], typescript:['tree-sitter-javascript','tree-sitter-typescript'], tsx:['tree-sitter-javascript','tree-sitter-typescript'], go:['tree-sitter-go'], c:['tree-sitter-c'], cpp:['tree-sitter-cpp'], java:['tree-sitter-java'], kotlin:['tree-sitter-kotlin'] };
+    const LANG_COLORS = { python: '#3b82f6', javascript: '#f59e0b', typescript: '#06b6d4', tsx: '#22d3ee', go: '#10b981', c: '#fb7185', cpp: '#f97316', java: '#ef4444', kotlin: '#a855f7', generic: '#6b7280' };
+    const PKG_HINTS = { python: ['tree-sitter-python'], javascript: ['tree-sitter-javascript', 'tree-sitter-typescript'], typescript: ['tree-sitter-javascript', 'tree-sitter-typescript'], tsx: ['tree-sitter-javascript', 'tree-sitter-typescript'], go: ['tree-sitter-go'], c: ['tree-sitter-c'], cpp: ['tree-sitter-cpp'], java: ['tree-sitter-java'], kotlin: ['tree-sitter-kotlin'] };
 
     function normalizeId(id) { return String(id || '').replace(/\\/g, '/'); }
     function splitPath(id) { return normalizeId(id).split('/'); }
     function basename(id) { const parts = splitPath(id); return parts[parts.length - 1] || id; }
     function dirname(id) { const parts = splitPath(id); parts.pop(); return parts.join('/') || '.'; }
-    function escapeHtml(value) { return String(value).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
-    function displayLang(lang) { return ({ javascript:'JavaScript', typescript:'TypeScript', tsx:'TSX', python:'Python', go:'Go', c:'C', cpp:'C/C++', java:'Java', kotlin:'Kotlin', generic:'Generic' })[lang] || lang; }
+    function escapeHtml(value) { return String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
+    function displayLang(lang) { return ({ javascript: 'JavaScript', typescript: 'TypeScript', tsx: 'TSX', python: 'Python', go: 'Go', c: 'C', cpp: 'C/C++', java: 'Java', kotlin: 'Kotlin', generic: 'Generic' })[lang] || lang; }
     function getTheme(cls) { return THEME[cls] || THEME.ORPHAN; }
     function getLangColor(lang) { return LANG_COLORS[(lang || '').toLowerCase()] || '#6b7280'; }
     function getActiveLanguageSet() { const all = new Set((G?.nodes || []).map(n => n.language).filter(Boolean)); return activeLangs === null ? all : activeLangs; }
-    function nodeVisible(node) { return !(hideTests && node.classification === 'TEST') && getActiveLanguageSet().has(node.language); }
+    function nodeVisible(node) {
+      if (hideTests && node.classification === 'TEST') return false;
+      if (!node.language) return true; // Always show nodes with no language
+      return getActiveLanguageSet().has(node.language);
+    }
     function nodeMatchesSearch(node) { if (!searchQuery) return true; const q = searchQuery.toLowerCase(); return basename(node.id).toLowerCase().includes(q) || normalizeId(node.filepath || node.id).toLowerCase().includes(q); }
     function formatSize(b) { if (!b) return '0 B'; if (b < 1024) return b + ' B'; if (b < 1048576) return (b / 1024).toFixed(1) + ' KB'; return (b / 1048576).toFixed(1) + ' MB'; }
 
@@ -699,8 +1004,10 @@
       const grid = document.getElementById('lang-chip-grid');
       if (!G) { grid.innerHTML = ''; updateLangButton(); return; }
       const langs = [...new Set(G.nodes.map(n => n.language).filter(Boolean))].sort();
+      const counts = {};
+      G.nodes.forEach(n => { if (n.language) counts[n.language] = (counts[n.language] || 0) + 1; });
       const active = getActiveLanguageSet();
-      grid.innerHTML = langs.map(lang => `<button class="toggle-chip ${active.has(lang) ? 'on' : ''}" data-lang="${escapeHtml(lang)}" style="color:${getLangColor(lang)};border-color:${active.has(lang) ? getLangColor(lang) : ''}">${escapeHtml(displayLang(lang))}</button>`).join('');
+      grid.innerHTML = langs.map(lang => `<button class="toggle-chip ${active.has(lang) ? 'on' : ''}" data-lang="${escapeHtml(lang)}" style="color:${getLangColor(lang)};border-color:${active.has(lang) ? getLangColor(lang) : ''}">${escapeHtml(displayLang(lang))} <span style="opacity:0.6;font-size:8px">(${counts[lang]})</span></button>`).join('');
       grid.querySelectorAll('[data-lang]').forEach(el => el.addEventListener('click', () => toggleLanguage(el.dataset.lang)));
       updateLangButton();
     }
@@ -719,7 +1026,7 @@
       if (current.has(lang)) current.delete(lang); else current.add(lang);
       const total = new Set(G.nodes.map(n => n.language).filter(Boolean)).size;
       activeLangs = current.size === total ? null : current;
-      renderLanguageMenu(); renderGraph();
+      renderLanguageMenu(); renderWaste(); renderGraph();
     }
 
     function loadGraph(data) {
@@ -728,11 +1035,12 @@
       buildCycleIndex(); updateUnsupportedBanner(); renderLanguageMenu(); updateStats(); renderWaste(); renderCycles(); renderGraph();
       if (G.summary?.cycle_count > 0) toast(`Alert: ${G.summary.cycle_count} circular dependencies found!`);
     }
+    window.loadGraph = loadGraph;
 
     function updateStats() {
       if (!G) return;
       const s = G.summary || {}, c = s.counts || {}, imp = G.meta?.import_stats || {};
-      const total = Object.values(imp).reduce((a,b) => a + b, 0), pct = total ? Math.round((imp.local || 0) / total * 100) : 0;
+      const total = Object.values(imp).reduce((a, b) => a + b, 0), pct = total ? Math.round((imp.local || 0) / total * 100) : 0;
       document.getElementById('s-files').textContent = G.nodes.length;
       document.getElementById('s-edges').textContent = G.edges.length;
       document.getElementById('s-orphans').textContent = (c.ORPHAN || 0) + (c.ISLAND || 0);
@@ -751,7 +1059,7 @@
     function bindRowClicks(container) { container.querySelectorAll('.list-item').forEach(el => el.addEventListener('click', () => focusNode(el.dataset.id))); }
 
     function renderWaste() {
-      if (!G) return; const waste = G.waste || [], list = document.getElementById('waste-list'), badge = document.getElementById('waste-badge');
+      if (!G) return; const waste = (G.waste || []).filter(nodeVisible), list = document.getElementById('waste-list'), badge = document.getElementById('waste-badge');
       badge.textContent = waste.length; badge.className = 'badge' + (waste.length === 0 ? ' ok' : '');
       if (!waste.length) { list.innerHTML = '<div style="padding:40px;text-align:center;color:var(--green);font-size:11px">✓ Clean codebase</div>'; return; }
       let html = ''; const islands = waste.filter(x => x.classification === 'ISLAND'), orphans = waste.filter(x => x.classification === 'ORPHAN');
@@ -815,8 +1123,8 @@
     function clearSel() { selId = null; document.getElementById('ip').style.display = 'block'; document.getElementById('ic').style.display = 'none'; document.getElementById('icycle').innerHTML = '<div style="color:var(--dim);font-size:10px">No cycle selected</div>'; applyGraphState(); }
     function focusNode(id) { const nid = normalizeId(id), sn = simN.find(n => n.id === nid); if (sn && zb) { const svg = d3.select('#graph'), W = svg.node().clientWidth, H = svg.node().clientHeight; svg.transition().duration(600).call(zb.transform, d3.zoomIdentity.translate(W / 2, H / 2).scale(1.8).translate(-sn.x, -sn.y)); } selectNode(nid); }
     function focusFirstSearchMatch() { const first = simN.find(nodeMatchesSearch); if (first) focusNode(first.id); }
-    function toggleSearch(open=true) { document.getElementById('search-box').classList.toggle('open', open); if (open) { const input = document.getElementById('search-input'); input.focus(); input.select(); } }
-    function clearSearch(hide=false) { searchQuery = ''; document.getElementById('search-input').value = ''; if (hide) document.getElementById('search-box').classList.remove('open'); applyGraphState(); }
+    function toggleSearch(open = true) { document.getElementById('search-box').classList.toggle('open', open); if (open) { const input = document.getElementById('search-input'); input.focus(); input.select(); } }
+    function clearSearch(hide = false) { searchQuery = ''; document.getElementById('search-input').value = ''; if (hide) document.getElementById('search-box').classList.remove('open'); applyGraphState(); }
 
     let _tt; function toast(m) { const el = document.getElementById('toast'); el.textContent = m; el.classList.add('show'); clearTimeout(_tt); _tt = setTimeout(() => el.classList.remove('show'), 3000); }
 
@@ -826,8 +1134,8 @@
     document.getElementById('btn-labels').onclick = function () { showLabels = !showLabels; this.classList.toggle('on'); applyGraphState(); };
     document.getElementById('btn-ht').onclick = function () { hideTests = !hideTests; this.classList.toggle('on'); renderGraph(); };
     document.getElementById('btn-lang').onclick = function () { if (G) document.getElementById('lang-menu').classList.toggle('open'); };
-    document.getElementById('lang-all').onclick = () => { activeLangs = null; renderLanguageMenu(); renderGraph(); };
-    document.getElementById('lang-none').onclick = () => { activeLangs = new Set(); renderLanguageMenu(); renderGraph(); };
+    document.getElementById('lang-all').onclick = () => { activeLangs = null; renderLanguageMenu(); renderWaste(); renderGraph(); };
+    document.getElementById('lang-none').onclick = () => { activeLangs = new Set(); renderLanguageMenu(); renderWaste(); renderGraph(); };
     document.getElementById('btn-search').onclick = () => toggleSearch(true);
     document.getElementById('btn-reset').onclick = () => { if (zb) d3.select('#graph').transition().duration(500).call(zb.transform, d3.zoomIdentity); };
     document.getElementById('btn-cycle-highlight').onclick = () => { highlightCycles = !highlightCycles; renderCycles(); applyGraphState(); };
@@ -835,7 +1143,7 @@
     document.getElementById('search-input').oninput = e => { searchQuery = e.target.value.trim(); applyGraphState(); };
     document.getElementById('search-input').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); focusFirstSearchMatch(); } if (e.key === 'Escape') { e.preventDefault(); clearSearch(true); } };
     document.addEventListener('click', e => { if (!e.target.closest('#lang-menu') && !e.target.closest('#btn-lang')) document.getElementById('lang-menu').classList.remove('open'); });
-    document.addEventListener('keydown', e => { const tag = document.activeElement?.tagName; const editing = ['INPUT','TEXTAREA'].includes(tag) || document.activeElement?.isContentEditable; if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); toggleSearch(true); return; } if (!editing && e.key === '/') { e.preventDefault(); toggleSearch(true); return; } if (e.key === 'Escape' && document.getElementById('search-box').classList.contains('open')) { e.preventDefault(); clearSearch(true); } });
+    document.addEventListener('keydown', e => { const tag = document.activeElement?.tagName; const editing = ['INPUT', 'TEXTAREA'].includes(tag) || document.activeElement?.isContentEditable; if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); toggleSearch(true); return; } if (!editing && e.key === '/') { e.preventDefault(); toggleSearch(true); return; } if (e.key === 'Escape' && document.getElementById('search-box').classList.contains('open')) { e.preventDefault(); clearSearch(true); } });
 
     function loadFile(file) { if (!file || !file.name.endsWith('.json')) return toast('Please select a valid graph.json'); const r = new FileReader(); r.onload = e => { try { loadGraph(JSON.parse(e.target.result)); toast('Graph loaded successfully'); } catch { toast('Error parsing JSON'); } }; r.readAsText(file); }
     document.getElementById('btn-open').onclick = () => document.getElementById('file-input').click();
