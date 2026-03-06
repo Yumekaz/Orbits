@@ -5,8 +5,8 @@
       "filepath": "analyzer.py",
       "name": "analyzer.py",
       "language": "python",
-      "size": 6530,
-      "mtime": 1772752360,
+      "size": 7365,
+      "mtime": 1772778712,
       "dir": ".",
       "classification": "ENTRY",
       "depth": 0,
@@ -281,8 +281,8 @@
       "filepath": "tests\\test_analyzer_behavior.py",
       "name": "test_analyzer_behavior.py",
       "language": "python",
-      "size": 2755,
-      "mtime": 1772752360,
+      "size": 3103,
+      "mtime": 1772778712,
       "dir": "tests",
       "classification": "TEST",
       "depth": -1,
@@ -321,6 +321,30 @@
       "mtime": 1772752360,
       "dir": "tests",
       "classification": "TEST",
+      "depth": -1,
+      "island_id": -1
+    },
+    {
+      "id": "visualizer_app.js",
+      "filepath": "visualizer_app.js",
+      "name": "visualizer_app.js",
+      "language": "javascript",
+      "size": 37781,
+      "mtime": 1772781590,
+      "dir": ".",
+      "classification": "ORPHAN",
+      "depth": -1,
+      "island_id": -1
+    },
+    {
+      "id": "visualizer_worker.js",
+      "filepath": "visualizer_worker.js",
+      "name": "visualizer_worker.js",
+      "language": "javascript",
+      "size": 24806,
+      "mtime": 1772778878,
+      "dir": ".",
+      "classification": "ORPHAN",
       "depth": -1,
       "island_id": -1
     },
@@ -673,6 +697,20 @@
       "classification": "ORPHAN",
       "size": 0,
       "island_id": -1
+    },
+    {
+      "id": "visualizer_app.js",
+      "name": "visualizer_app.js",
+      "classification": "ORPHAN",
+      "size": 37781,
+      "island_id": -1
+    },
+    {
+      "id": "visualizer_worker.js",
+      "name": "visualizer_worker.js",
+      "classification": "ORPHAN",
+      "size": 24806,
+      "island_id": -1
     }
   ],
   "summary": {
@@ -681,18 +719,18 @@
       "ENTRY": 2,
       "LEAF": 10,
       "CONNECTED": 8,
-      "ORPHAN": 2
+      "ORPHAN": 4
     },
-    "total": 30,
+    "total": 32,
     "cycle_count": 0,
     "island_count": 0,
     "max_depth": 3,
-    "health_score": 97,
-    "unreachable": 10
+    "health_score": 95,
+    "unreachable": 12
   },
   "meta": {
     "root": "C:\\Users\\Mihir\\OneDrive\\Desktop\\orbits",
-    "total_files": 30,
+    "total_files": 32,
     "total_edges": 42,
     "languages": [
       "python",
@@ -709,7 +747,7 @@
     },
     "package_name": "",
     "phase": 3,
-    "elapsed_s": 0.22,
+    "elapsed_s": 0.67,
     "language_support": {
       "python": {
         "available": true,

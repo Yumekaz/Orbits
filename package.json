@@ -1,0 +1,9 @@
+{
+  "name": "orbits-frontend",
+  "private": true,
+  "version": "1.0.0",
+  "dependencies": {
+    "cytoscape": "^3.33.1",
+    "d3": "^7.9.0"
+  }
+}

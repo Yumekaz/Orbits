@@ -29,8 +29,10 @@ class AnalyzerBehaviorTests(unittest.TestCase):
             root = Path(tmp)
             viz = root / 'visualizer.html'
             graph = root / 'graph.json'
+            asset = root / 'visualizer_worker.js'
             viz.write_text('<html>viz</html>', encoding='utf-8')
             graph.write_text(json.dumps({'ok': True}), encoding='utf-8')
+            asset.write_text('console.log(1);', encoding='utf-8')
 
             handler = analyzer.make_server_handler(viz, graph)
             server = analyzer.http.server.ThreadingHTTPServer(('127.0.0.1', 0), handler)
@@ -42,6 +44,8 @@ class AnalyzerBehaviorTests(unittest.TestCase):
                     self.assertEqual(response.read().decode('utf-8'), '<html>viz</html>')
                 with urlopen(base + '/graph.json') as response:
                     self.assertEqual(json.loads(response.read().decode('utf-8')), {'ok': True})
+                with urlopen(base + '/visualizer_worker.js') as response:
+                    self.assertEqual(response.read().decode('utf-8'), 'console.log(1);')
             finally:
                 server.shutdown()
                 server.server_close()

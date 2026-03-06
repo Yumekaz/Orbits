@@ -48,6 +48,33 @@ Implemented with tree-sitter-backed extraction for:
 
 The analyzer uses one worker per language when the environment allows subprocess workers and falls back to sequential execution when process creation is blocked.
 
+
+## Phase 4 Tech Status
+
+The production visualizer now includes:
+
+- Cytoscape.js rendering via the local `node_modules/` install
+- browser-side graph analysis in `visualizer_worker.js` using a Web Worker
+- File System Access API folder loading from the visualizer `folder` button in Chromium-based browsers
+
+The browser worker emits the same top-level graph shape as `graph.json` so the UI can switch between Python-generated graphs and browser-generated graphs.
+
+## Frontend Setup
+
+Install the local frontend dependency once:
+
+```bash
+npm install
+```
+
+Then run the normal analyzer flow:
+
+```bash
+python analyzer.py /path/to/project --serve
+```
+
+The visualizer will serve local frontend assets, including Cytoscape from `node_modules/`.
+
 ## Local Runtime Setup
 
 Tree-sitter grammars are installed in the workspace venv at `.venv/`.

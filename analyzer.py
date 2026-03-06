@@ -25,29 +25,46 @@ from lang_dispatch import extract_all
 class _GraphRequestHandler(http.server.BaseHTTPRequestHandler):
     visualizer_path: Path | None = None
     graph_path: Path | None = None
+    asset_root: Path | None = None
 
     def do_GET(self):
-        route = self.path.split('?', 1)[0]
-        if route in ('/', '/visualizer.html'):
-            self._send_file(self.visualizer_path, 'text/html; charset=utf-8')
+        filepath, content_type = self._resolve_route()
+        if filepath is None:
+            self.send_error(404, 'Not Found')
             return
-        if route == '/graph.json':
-            self._send_file(self.graph_path, 'application/json; charset=utf-8')
-            return
-        self.send_error(404, 'Not Found')
+        self._send_file(filepath, content_type)
 
     def do_HEAD(self):
-        route = self.path.split('?', 1)[0]
-        if route in ('/', '/visualizer.html'):
-            self._send_headers(self.visualizer_path, 'text/html; charset=utf-8')
+        filepath, content_type = self._resolve_route()
+        if filepath is None:
+            self.send_error(404, 'Not Found')
             return
-        if route == '/graph.json':
-            self._send_headers(self.graph_path, 'application/json; charset=utf-8')
-            return
-        self.send_error(404, 'Not Found')
+        self._send_headers(filepath, content_type)
 
     def log_message(self, *_args):
         pass
+
+    def _resolve_route(self) -> tuple[Path | None, str]:
+        route = self.path.split('?', 1)[0]
+        if route in ('/', '/visualizer.html'):
+            return self.visualizer_path, 'text/html; charset=utf-8'
+        if route == '/graph.json':
+            return self.graph_path, 'application/json; charset=utf-8'
+
+        if not self.asset_root:
+            return None, 'application/octet-stream'
+
+        candidate = (self.asset_root / route.lstrip('/')).resolve()
+        try:
+            candidate.relative_to(self.asset_root.resolve())
+        except ValueError:
+            return None, 'application/octet-stream'
+
+        if not candidate.exists() or not candidate.is_file():
+            return None, 'application/octet-stream'
+
+        content_type = mimetypes.guess_type(str(candidate))[0] or 'application/octet-stream'
+        return candidate, content_type
 
     def _send_headers(self, filepath: Path | None, content_type: str):
         if not filepath or not filepath.exists():
@@ -76,6 +93,7 @@ def make_server_handler(visualizer_path: Path, graph_path: Path):
 
     Handler.visualizer_path = visualizer_path
     Handler.graph_path = graph_path
+    Handler.asset_root = visualizer_path.parent.resolve()
     return Handler
 
 
