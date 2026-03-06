@@ -5,40 +5,40 @@
       "filepath": "analyzer.py",
       "name": "analyzer.py",
       "language": "python",
-      "size": 4193,
+      "size": 6530,
       "dir": ".",
-      "classification": "ENTRY",
-      "depth": 0,
-      "island_id": -1
+      "classification": "ISLAND",
+      "depth": -1,
+      "island_id": 0
     },
     {
       "id": "cache.py",
       "filepath": "cache.py",
       "name": "cache.py",
       "language": "python",
-      "size": 4821,
+      "size": 4973,
       "dir": ".",
-      "classification": "LEAF",
-      "depth": 2,
-      "island_id": -1
+      "classification": "ISLAND",
+      "depth": -1,
+      "island_id": 0
     },
     {
       "id": "crawler.py",
       "filepath": "crawler.py",
       "name": "crawler.py",
       "language": "python",
-      "size": 3002,
+      "size": 3133,
       "dir": ".",
-      "classification": "LEAF",
-      "depth": 2,
-      "island_id": -1
+      "classification": "ISLAND",
+      "depth": -1,
+      "island_id": 0
     },
     {
       "id": "extractor.py",
       "filepath": "extractor.py",
       "name": "extractor.py",
       "language": "python",
-      "size": 2100,
+      "size": 2172,
       "dir": ".",
       "classification": "ENTRY",
       "depth": 0,
@@ -51,20 +51,20 @@
       "language": "python",
       "size": 14226,
       "dir": ".",
-      "classification": "LEAF",
-      "depth": 1,
-      "island_id": -1
+      "classification": "ISLAND",
+      "depth": -1,
+      "island_id": 0
     },
     {
       "id": "lang_dispatch.py",
       "filepath": "lang_dispatch.py",
       "name": "lang_dispatch.py",
       "language": "python",
-      "size": 11555,
+      "size": 11769,
       "dir": ".",
-      "classification": "CONNECTED",
-      "depth": 1,
-      "island_id": -1
+      "classification": "ISLAND",
+      "depth": -1,
+      "island_id": 0
     },
     {
       "id": "resolver.py",
@@ -78,25 +78,47 @@
       "island_id": -1
     },
     {
+      "id": "runtime_env.py",
+      "filepath": "runtime_env.py",
+      "name": "runtime_env.py",
+      "language": "python",
+      "size": 494,
+      "dir": ".",
+      "classification": "LEAF",
+      "depth": 1,
+      "island_id": -1
+    },
+    {
       "id": "worker.py",
       "filepath": "worker.py",
       "name": "worker.py",
       "language": "python",
-      "size": 8479,
+      "size": 7791,
       "dir": ".",
-      "classification": "CONNECTED",
-      "depth": 2,
-      "island_id": -1
+      "classification": "ISLAND",
+      "depth": -1,
+      "island_id": 0
     },
     {
       "id": "extractors\\base.py",
       "filepath": "extractors\\base.py",
       "name": "base.py",
       "language": "python",
-      "size": 1813,
+      "size": 2031,
       "dir": "extractors",
       "classification": "LEAF",
       "depth": 1,
+      "island_id": -1
+    },
+    {
+      "id": "extractors\\c_family_extractor.py",
+      "filepath": "extractors\\c_family_extractor.py",
+      "name": "c_family_extractor.py",
+      "language": "python",
+      "size": 3855,
+      "dir": "extractors",
+      "classification": "ENTRY",
+      "depth": 0,
       "island_id": -1
     },
     {
@@ -115,7 +137,7 @@
       "filepath": "extractors\\go_extractor.py",
       "name": "go_extractor.py",
       "language": "python",
-      "size": 2082,
+      "size": 2372,
       "dir": "extractors",
       "classification": "ENTRY",
       "depth": 0,
@@ -126,7 +148,18 @@
       "filepath": "extractors\\js_extractor.py",
       "name": "js_extractor.py",
       "language": "python",
-      "size": 5298,
+      "size": 4575,
+      "dir": "extractors",
+      "classification": "ENTRY",
+      "depth": 0,
+      "island_id": -1
+    },
+    {
+      "id": "extractors\\jvm_extractor.py",
+      "filepath": "extractors\\jvm_extractor.py",
+      "name": "jvm_extractor.py",
+      "language": "python",
+      "size": 3426,
       "dir": "extractors",
       "classification": "ENTRY",
       "depth": 0,
@@ -137,7 +170,7 @@
       "filepath": "extractors\\python_extractor.py",
       "name": "python_extractor.py",
       "language": "python",
-      "size": 2769,
+      "size": 4010,
       "dir": "extractors",
       "classification": "ENTRY",
       "depth": 0,
@@ -150,8 +183,19 @@
       "language": "python",
       "size": 0,
       "dir": "extractors",
-      "classification": "LEAF",
-      "depth": 3,
+      "classification": "ORPHAN",
+      "depth": -1,
+      "island_id": -1
+    },
+    {
+      "id": "resolvers\\c_family_resolver.py",
+      "filepath": "resolvers\\c_family_resolver.py",
+      "name": "c_family_resolver.py",
+      "language": "python",
+      "size": 4540,
+      "dir": "resolvers",
+      "classification": "ORPHAN",
+      "depth": -1,
       "island_id": -1
     },
     {
@@ -170,7 +214,18 @@
       "filepath": "resolvers\\js_resolver.py",
       "name": "js_resolver.py",
       "language": "python",
-      "size": 8521,
+      "size": 8716,
+      "dir": "resolvers",
+      "classification": "ORPHAN",
+      "depth": -1,
+      "island_id": -1
+    },
+    {
+      "id": "resolvers\\jvm_resolver.py",
+      "filepath": "resolvers\\jvm_resolver.py",
+      "name": "jvm_resolver.py",
+      "language": "python",
+      "size": 3150,
       "dir": "resolvers",
       "classification": "ORPHAN",
       "depth": -1,
@@ -194,22 +249,66 @@
       "language": "python",
       "size": 0,
       "dir": "resolvers",
-      "classification": "LEAF",
-      "depth": 2,
+      "classification": "ORPHAN",
+      "depth": -1,
       "island_id": -1
+    },
+    {
+      "id": "tests\\test_analyzer_behavior.py",
+      "filepath": "tests\\test_analyzer_behavior.py",
+      "name": "test_analyzer_behavior.py",
+      "language": "python",
+      "size": 2755,
+      "dir": "tests",
+      "classification": "TEST",
+      "depth": -1,
+      "island_id": 0
+    },
+    {
+      "id": "tests\\test_multilang.py",
+      "filepath": "tests\\test_multilang.py",
+      "name": "test_multilang.py",
+      "language": "python",
+      "size": 6727,
+      "dir": "tests",
+      "classification": "TEST",
+      "depth": -1,
+      "island_id": 0
+    },
+    {
+      "id": "tests\\test_python_resolution.py",
+      "filepath": "tests\\test_python_resolution.py",
+      "name": "test_python_resolution.py",
+      "language": "python",
+      "size": 1263,
+      "dir": "tests",
+      "classification": "TEST",
+      "depth": -1,
+      "island_id": 0
+    },
+    {
+      "id": "tests\\test_smoke.py",
+      "filepath": "tests\\test_smoke.py",
+      "name": "test_smoke.py",
+      "language": "python",
+      "size": 1456,
+      "dir": "tests",
+      "classification": "TEST",
+      "depth": -1,
+      "island_id": 0
     }
   ],
   "edges": [
     {
       "source": "analyzer.py",
-      "target": "lang_dispatch.py",
+      "target": "graph_engine.py",
       "type": "import_from",
       "line": 21,
       "language": "python"
     },
     {
       "source": "analyzer.py",
-      "target": "graph_engine.py",
+      "target": "lang_dispatch.py",
       "type": "import_from",
       "line": 22,
       "language": "python"
@@ -218,19 +317,19 @@
       "source": "extractor.py",
       "target": "resolver.py",
       "type": "import_from",
-      "line": 8,
+      "line": 9,
       "language": "python"
     },
     {
       "source": "lang_dispatch.py",
-      "target": "crawler.py",
+      "target": "cache.py",
       "type": "import_from",
       "line": 18,
       "language": "python"
     },
     {
       "source": "lang_dispatch.py",
-      "target": "cache.py",
+      "target": "crawler.py",
       "type": "import_from",
       "line": 19,
       "language": "python"
@@ -243,38 +342,17 @@
       "language": "python"
     },
     {
-      "source": "lang_dispatch.py",
-      "target": "resolver.py",
+      "source": "extractors\\c_family_extractor.py",
+      "target": "runtime_env.py",
       "type": "import_from",
-      "line": 82,
+      "line": 9,
       "language": "python"
     },
     {
-      "source": "lang_dispatch.py",
-      "target": "resolvers\\__init__.py",
+      "source": "extractors\\c_family_extractor.py",
+      "target": "extractors\\base.py",
       "type": "import_from",
-      "line": 83,
-      "language": "python"
-    },
-    {
-      "source": "worker.py",
-      "target": "extractors\\__init__.py",
-      "type": "import_from",
-      "line": 67,
-      "language": "python"
-    },
-    {
-      "source": "worker.py",
-      "target": "resolver.py",
-      "type": "import_from",
-      "line": 166,
-      "language": "python"
-    },
-    {
-      "source": "worker.py",
-      "target": "resolvers\\__init__.py",
-      "type": "import_from",
-      "line": 187,
+      "line": 13,
       "language": "python"
     },
     {
@@ -286,23 +364,58 @@
     },
     {
       "source": "extractors\\go_extractor.py",
+      "target": "runtime_env.py",
+      "type": "import_from",
+      "line": 9,
+      "language": "python"
+    },
+    {
+      "source": "extractors\\go_extractor.py",
       "target": "extractors\\base.py",
       "type": "import_from",
-      "line": 8,
+      "line": 13,
+      "language": "python"
+    },
+    {
+      "source": "extractors\\js_extractor.py",
+      "target": "runtime_env.py",
+      "type": "import_from",
+      "line": 9,
       "language": "python"
     },
     {
       "source": "extractors\\js_extractor.py",
       "target": "extractors\\base.py",
       "type": "import_from",
-      "line": 11,
+      "line": 13,
+      "language": "python"
+    },
+    {
+      "source": "extractors\\jvm_extractor.py",
+      "target": "runtime_env.py",
+      "type": "import_from",
+      "line": 9,
+      "language": "python"
+    },
+    {
+      "source": "extractors\\jvm_extractor.py",
+      "target": "extractors\\base.py",
+      "type": "import_from",
+      "line": 13,
+      "language": "python"
+    },
+    {
+      "source": "extractors\\python_extractor.py",
+      "target": "runtime_env.py",
+      "type": "import_from",
+      "line": 10,
       "language": "python"
     },
     {
       "source": "extractors\\python_extractor.py",
       "target": "extractors\\base.py",
       "type": "import_from",
-      "line": 15,
+      "line": 14,
       "language": "python"
     },
     {
@@ -311,11 +424,122 @@
       "type": "import_from",
       "line": 12,
       "language": "python"
+    },
+    {
+      "source": "tests\\test_analyzer_behavior.py",
+      "target": "analyzer.py",
+      "type": "import",
+      "line": 8,
+      "language": "python"
+    },
+    {
+      "source": "tests\\test_analyzer_behavior.py",
+      "target": "lang_dispatch.py",
+      "type": "import_from",
+      "line": 9,
+      "language": "python"
+    },
+    {
+      "source": "tests\\test_multilang.py",
+      "target": "lang_dispatch.py",
+      "type": "import_from",
+      "line": 5,
+      "language": "python"
+    },
+    {
+      "source": "tests\\test_python_resolution.py",
+      "target": "lang_dispatch.py",
+      "type": "import_from",
+      "line": 5,
+      "language": "python"
+    },
+    {
+      "source": "tests\\test_smoke.py",
+      "target": "analyzer.py",
+      "type": "import",
+      "line": 5,
+      "language": "python"
     }
   ],
   "cycles": [],
-  "islands": [],
+  "islands": [
+    [
+      "analyzer.py",
+      "tests\\test_smoke.py",
+      "tests\\test_analyzer_behavior.py",
+      "graph_engine.py",
+      "lang_dispatch.py",
+      "cache.py",
+      "worker.py",
+      "tests\\test_multilang.py",
+      "crawler.py",
+      "tests\\test_python_resolution.py"
+    ]
+  ],
   "waste": [
+    {
+      "id": "analyzer.py",
+      "name": "analyzer.py",
+      "classification": "ISLAND",
+      "size": 6530,
+      "island_id": 0
+    },
+    {
+      "id": "cache.py",
+      "name": "cache.py",
+      "classification": "ISLAND",
+      "size": 4973,
+      "island_id": 0
+    },
+    {
+      "id": "crawler.py",
+      "name": "crawler.py",
+      "classification": "ISLAND",
+      "size": 3133,
+      "island_id": 0
+    },
+    {
+      "id": "graph_engine.py",
+      "name": "graph_engine.py",
+      "classification": "ISLAND",
+      "size": 14226,
+      "island_id": 0
+    },
+    {
+      "id": "lang_dispatch.py",
+      "name": "lang_dispatch.py",
+      "classification": "ISLAND",
+      "size": 11769,
+      "island_id": 0
+    },
+    {
+      "id": "worker.py",
+      "name": "worker.py",
+      "classification": "ISLAND",
+      "size": 7791,
+      "island_id": 0
+    },
+    {
+      "id": "extractors\\__init__.py",
+      "name": "__init__.py",
+      "classification": "ORPHAN",
+      "size": 0,
+      "island_id": -1
+    },
+    {
+      "id": "resolvers\\__init__.py",
+      "name": "__init__.py",
+      "classification": "ORPHAN",
+      "size": 0,
+      "island_id": -1
+    },
+    {
+      "id": "resolvers\\c_family_resolver.py",
+      "name": "c_family_resolver.py",
+      "classification": "ORPHAN",
+      "size": 4540,
+      "island_id": -1
+    },
     {
       "id": "resolvers\\go_resolver.py",
       "name": "go_resolver.py",
@@ -327,40 +551,91 @@
       "id": "resolvers\\js_resolver.py",
       "name": "js_resolver.py",
       "classification": "ORPHAN",
-      "size": 8521,
+      "size": 8716,
+      "island_id": -1
+    },
+    {
+      "id": "resolvers\\jvm_resolver.py",
+      "name": "jvm_resolver.py",
+      "classification": "ORPHAN",
+      "size": 3150,
       "island_id": -1
     }
   ],
   "summary": {
     "counts": {
-      "ENTRY": 7,
-      "LEAF": 7,
-      "CONNECTED": 2,
-      "ORPHAN": 2
+      "ISLAND": 6,
+      "ENTRY": 8,
+      "LEAF": 3,
+      "ORPHAN": 6,
+      "TEST": 4
     },
-    "total": 18,
+    "total": 27,
     "cycle_count": 0,
-    "island_count": 0,
-    "max_depth": 3,
-    "health_score": 96,
-    "unreachable": 2
+    "island_count": 1,
+    "max_depth": 1,
+    "health_score": 84,
+    "unreachable": 16
   },
   "meta": {
-    "root": "C:\\Users\\Mihir\\OneDrive\\Desktop\\phase0",
-    "total_files": 18,
-    "total_edges": 16,
+    "root": "C:\\Users\\Mihir\\OneDrive\\Desktop\\orbits",
+    "total_files": 27,
+    "total_edges": 23,
     "languages": [
       "python"
     ],
     "import_stats": {
-      "local": 37,
-      "stdlib": 70,
+      "local": 57,
+      "stdlib": 139,
       "third_party": 0,
       "external": 0,
-      "unknown": 12
+      "unknown": 0
     },
     "package_name": "",
     "phase": 3,
-    "elapsed_s": 0.03
+    "elapsed_s": 0.1,
+    "language_support": {
+      "python": {
+        "available": true,
+        "reason": ""
+      },
+      "javascript": {
+        "available": true,
+        "reason": ""
+      },
+      "typescript": {
+        "available": true,
+        "reason": ""
+      },
+      "tsx": {
+        "available": true,
+        "reason": ""
+      },
+      "go": {
+        "available": true,
+        "reason": ""
+      },
+      "c": {
+        "available": true,
+        "reason": ""
+      },
+      "cpp": {
+        "available": true,
+        "reason": ""
+      },
+      "java": {
+        "available": true,
+        "reason": ""
+      },
+      "kotlin": {
+        "available": true,
+        "reason": ""
+      },
+      "generic": {
+        "available": true,
+        "reason": ""
+      }
+    },
+    "unsupported_languages": []
   }
 }
