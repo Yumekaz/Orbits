@@ -194,7 +194,6 @@
     #main {
       display: flex;
       flex: 1;
-      min-height: 0;
       overflow: hidden
     }
 
@@ -211,12 +210,9 @@
       z-index: 50
     }
 
-     #left-rail {
-      min-height: 0;
+    #left-rail {
       width: 320px;
       border-right: 1px solid var(--border);
-      overflow: hidden;
-      flex: 0 0 320px;
       transition: width .35s cubic-bezier(0.4, 0, 0.2, 1)
     }
 
@@ -228,22 +224,18 @@
 
     #left-rail.collapsed {
       width: 0;
-      flex-basis: 0;
       border: none
     }
 
     #inspector {
-      min-height: 0;
       width: 300px;
       border-left: 1px solid var(--border);
-      flex: 0 0 300px;
       overflow-y: auto;
       transition: width .35s cubic-bezier(0.4, 0, 0.2, 1)
     }
 
     #inspector.collapsed {
       width: 0;
-      flex-basis: 0;
       border: none
     }
 
@@ -481,8 +473,6 @@
     /* ── Graph & Canvas ────────────────────────────────────── */
     #canvas-wrap {
       flex: 1;
-      min-width: 0;
-      min-height: 0;
       position: relative;
       overflow: hidden
     }
@@ -975,18 +965,21 @@
               class="tl">Langs</span></div>
         </div>
       </div>
-      <div id="tb-controls">
-        <button class="btn" id="btn-folder">folder</button>
-        <button class="btn on" id="btn-waste">waste</button>
-        <button class="btn on" id="btn-cycles">cycles</button>
-        <button class="btn on" id="btn-insp">inspector</button>
-        <button class="btn" id="btn-cluster">view</button>
-        <button class="btn" id="btn-filter">filter</button>
-        <button class="btn" id="btn-lang">languages</button>
-        <button class="btn" id="btn-search">search</button>
-        <button class="btn" id="btn-reset">reset</button>
-      </div>
     </div>
+    <div id="tb-controls">
+      <button class="btn" id="btn-folder">folder</button>
+      <button class="btn on" id="btn-waste">waste</button>
+      <button class="btn on" id="btn-cycles">cycles</button>
+      <button class="btn on" id="btn-insp">inspector</button>
+      <button class="btn" id="btn-cluster">view</button>
+      <button class="btn" id="btn-filter">filter</button>
+      <button class="btn" id="btn-lang">languages</button>
+      <button class="btn" id="btn-search">search</button>
+      <button class="btn" id="btn-reset">reset</button>
+    </div>
+  </div>
+
+  </div>
 
   <div id="main">
     <div id="left-rail">
@@ -1123,11 +1116,8 @@
     <div class="chip-grid" id="lang-chip-grid"></div>
   </div>
   </div>
+
   <script src="visualizer_app.js"></script>
 </body>
 
 </html>
-
-
-
-

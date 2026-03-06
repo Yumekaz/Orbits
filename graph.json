@@ -5,8 +5,8 @@
       "filepath": "analyzer.py",
       "name": "analyzer.py",
       "language": "python",
-      "size": 15269,
-      "mtime": 1772783276,
+      "size": 15637,
+      "mtime": 1772796610,
       "dir": ".",
       "classification": "ENTRY",
       "depth": 0,
@@ -353,8 +353,8 @@
       "filepath": "visualizer_app.js",
       "name": "visualizer_app.js",
       "language": "javascript",
-      "size": 72254,
-      "mtime": 1772793068,
+      "size": 72826,
+      "mtime": 1772794146,
       "dir": ".",
       "classification": "ORPHAN",
       "depth": -1,
@@ -757,7 +757,7 @@
       "id": "visualizer_app.js",
       "name": "visualizer_app.js",
       "classification": "ORPHAN",
-      "size": 72254,
+      "size": 72826,
       "island_id": -1
     },
     {
@@ -810,7 +810,7 @@
     },
     "package_name": "",
     "phase": 3,
-    "elapsed_s": 0.48,
+    "elapsed_s": 0.18,
     "language_support": {
       "python": {
         "available": true,

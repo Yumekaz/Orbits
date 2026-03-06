@@ -1325,16 +1325,22 @@
     if (hide) ELS['search-box'].classList.remove('open');
   }
 
+    function refreshViewportAfterShellChange() {
+    setTimeout(() => {
+      resizeCanvas();
+      scheduleRender();
+    }, 320);
+  }
   function wireUi() {
     ELS['btn-folder'].onclick = () => openFolder().catch((err) => toast(err.message || String(err)));
     ELS['btn-open'].onclick = () => ELS['file-input'].click();
     ELS['file-input'].onchange = (event) => loadFile(event.target.files[0]);
     document.addEventListener('dragover', (event) => event.preventDefault());
     document.addEventListener('drop', (event) => { event.preventDefault(); loadFile(event.dataTransfer.files[0]); });
-    ELS['btn-waste'].onclick = function () { ELS['left-rail'].classList.toggle('collapsed'); this.classList.toggle('on'); setTimeout(scheduleRender, 320); };
-    ELS['btn-cycles'].onclick = function () { ELS['left-rail'].classList.remove('collapsed'); ELS['btn-waste'].classList.add('on'); setLeftPanel('cycles-panel'); setTimeout(scheduleRender, 320); };
+    ELS['btn-waste'].onclick = function () { ELS['left-rail'].classList.toggle('collapsed'); this.classList.toggle('on'); refreshViewportAfterShellChange(); };
+    ELS['btn-cycles'].onclick = function () { ELS['left-rail'].classList.remove('collapsed'); ELS['btn-waste'].classList.add('on'); setLeftPanel('cycles-panel'); refreshViewportAfterShellChange(); };
     document.querySelectorAll('.left-tab').forEach((tab) => tab.addEventListener('click', () => setLeftPanel(tab.dataset.leftPanel)));
-    ELS['btn-insp'].onclick = function () { ELS.inspector.classList.toggle('collapsed'); this.classList.toggle('on'); setTimeout(scheduleRender, 320); };
+    ELS['btn-insp'].onclick = function () { ELS.inspector.classList.toggle('collapsed'); this.classList.toggle('on'); refreshViewportAfterShellChange(); };
     ELS['btn-cluster'].onclick = () => openAnchoredMenu(ELS['btn-cluster'], ELS['layout-menu']);
     ELS['layout-force'].onclick = () => { setLayoutMode('force'); ELS['layout-menu'].classList.remove('open'); };
     ELS['layout-cluster'].onclick = () => { setLayoutMode('cluster'); ELS['layout-menu'].classList.remove('open'); };
@@ -1402,3 +1408,4 @@
 
   boot();
 })();
+
