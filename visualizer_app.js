@@ -1088,7 +1088,13 @@
     ELS['s-resolved'].style.color = resolvedPct > 80 ? 'var(--green)' : resolvedPct > 50 ? 'var(--amber)' : 'var(--red)';
     ELS['health-pill'].querySelector('span').textContent = s.health_score ?? '—';
     ELS['health-pill'].classList.remove('hidden');
-    const runtimeSuffix = runtimeMeta.enabled ? ` • Runtime ${runtimeMeta.dynamic_edges || 0} dyn` : '';
+    const runtimeParts = [];
+    if (runtimeMeta.enabled) {
+      runtimeParts.push(`Runtime ${runtimeMeta.dynamic_edges || 0} dyn`);
+      if ((runtimeMeta.session_count || 0) > 1) runtimeParts.push(`${runtimeMeta.session_count} sessions`);
+      if ((runtimeMeta.languages || []).length > 1) runtimeParts.push(runtimeMeta.languages.join('/'));
+    }
+    const runtimeSuffix = runtimeParts.length ? ` • ${runtimeParts.join(' • ')}` : '';
     ELS['elapsed'].textContent = APP.graph.meta?.elapsed_s ? `Analysed in ${APP.graph.meta.elapsed_s}s${runtimeSuffix}` : runtimeSuffix.replace(/^ • /, '');
     updatePerformanceControls();
   }
@@ -1647,6 +1653,8 @@
       get graphNodeCount() { return APP.graph?.nodes?.length ?? 0; },
       get graphEdgeCount() { return APP.graph?.edges?.length ?? 0; },
       get graphDynamicEdgeCount() { return APP.graph?.dynamic_edges?.length ?? 0; },
+      get runtimeSessionCount() { return APP.graph?.meta?.runtime?.session_count ?? 0; },
+      get runtimeLanguages() { return APP.graph?.meta?.runtime?.languages ?? []; },
       get selectedNodeId() { return APP.state.selectedId; },
       get visibleNodeCount() { return APP.renderModel?.renderNodes?.length ?? 0; },
       get visibleEdgeCount() { return APP.renderModel?.renderEdges?.length ?? 0; },

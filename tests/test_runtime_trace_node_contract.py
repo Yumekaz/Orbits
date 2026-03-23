@@ -4,7 +4,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import analyzer
-from runtime_trace import merge_runtime_trace
+from runtime_trace import merge_runtime_trace, merge_runtime_traces
 
 
 class NodeRuntimeTraceContractTests(unittest.TestCase):
@@ -206,6 +206,155 @@ class NodeRuntimeTraceContractTests(unittest.TestCase):
             self.assertIn(('src/server.js', 'src/dynamic.js'), dynamic_pairs)
             self.assertEqual(refreshed['meta']['runtime']['language'], 'nodejs')
             self.assertTrue(refreshed['meta']['runtime']['stale'])
+
+    def test_merge_runtime_traces_combines_python_and_node_sessions(self):
+        static_graph = {
+            'nodes': [
+                {'id': 'app/main.py', 'filepath': 'app/main.py', 'name': 'main.py', 'dir': 'app', 'classification': 'ENTRY', 'language': 'python', 'size': 10, 'mtime': 1, 'depth': 0, 'island_id': -1},
+                {'id': 'app/plugin.py', 'filepath': 'app/plugin.py', 'name': 'plugin.py', 'dir': 'app', 'classification': 'LEAF', 'language': 'python', 'size': 10, 'mtime': 1, 'depth': 1, 'island_id': -1},
+                {'id': 'src/index.js', 'filepath': 'src/index.js', 'name': 'index.js', 'dir': 'src', 'classification': 'ENTRY', 'language': 'javascript', 'size': 10, 'mtime': 1, 'depth': 0, 'island_id': -1},
+                {'id': 'src/runtime.js', 'filepath': 'src/runtime.js', 'name': 'runtime.js', 'dir': 'src', 'classification': 'LEAF', 'language': 'javascript', 'size': 10, 'mtime': 1, 'depth': 1, 'island_id': -1},
+            ],
+            'edges': [],
+            'meta': {'root': 'C:/repo', 'languages': ['python', 'javascript'], 'import_stats': {'local': 0, 'stdlib': 0, 'external': 0, 'unknown': 0}, 'unsupported_languages': []},
+            'summary': {'counts': {'ENTRY': 2, 'LEAF': 2}, 'total': 4, 'cycle_count': 0, 'island_count': 0, 'max_depth': 1, 'health_score': 100, 'unreachable': 0},
+        }
+        python_trace = {
+            'language': 'python',
+            'engine': 'python',
+            'entry': {'mode': 'script', 'target': 'app/main.py', 'args': []},
+            'summary': {'local_edge_count': 1, 'local_edge_hits': 1, 'local_file_access_count': 0, 'local_file_access_hits': 0},
+            'timed_out': False,
+            'elapsed_s': 0.1,
+            'exit_code': 0,
+            'error': None,
+            'file_accesses': [],
+            'edges': [{'source': 'app/main.py', 'target': 'app/plugin.py', 'line': 3, 'language': 'python', 'runtime_hits': 1, 'runtime_modules': ['app.plugin'], 'runtime_lines': [3]}],
+        }
+        node_trace = {
+            'language': 'nodejs',
+            'engine': 'node',
+            'entry': {'mode': 'module', 'target': 'src/index.js', 'args': []},
+            'summary': {'local_edge_count': 1, 'local_edge_hits': 2, 'local_file_access_count': 0, 'local_file_access_hits': 0},
+            'timed_out': False,
+            'elapsed_s': 0.2,
+            'exit_code': 0,
+            'error': None,
+            'file_accesses': [],
+            'edges': [{'source': 'src/index.js', 'target': 'src/runtime.js', 'line': 4, 'language': 'javascript', 'runtime_hits': 2, 'runtime_modules': ['./runtime.js'], 'runtime_lines': [4]}],
+        }
+
+        merged = merge_runtime_traces(
+            static_graph,
+            [
+                (python_trace, Path('C:/tmp/python_runtime_trace.json'), False),
+                (node_trace, Path('C:/tmp/node_runtime_trace.json'), True),
+            ],
+        )
+
+        dynamic_pairs = {(edge['source'], edge['target']) for edge in merged['dynamic_edges']}
+        self.assertEqual(dynamic_pairs, {('app/main.py', 'app/plugin.py'), ('src/index.js', 'src/runtime.js')})
+        self.assertEqual(merged['meta']['runtime']['session_count'], 2)
+        self.assertEqual(merged['meta']['runtime']['language'], 'mixed')
+        self.assertEqual(set(merged['meta']['runtime']['languages']), {'python', 'nodejs'})
+        self.assertTrue(merged['meta']['runtime']['stale'])
+        self.assertEqual(len(merged['runtime']['sessions']), 2)
+
+    def test_source_map_remap_maps_dist_js_runtime_edges_back_to_src_ts(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'src').mkdir()
+            (root / 'dist').mkdir()
+            (root / 'dist' / 'server.js.map').write_text(json.dumps({
+                'version': 3,
+                'file': 'server.js',
+                'sources': ['../src/server.ts'],
+            }), encoding='utf-8')
+            (root / 'dist' / 'dynamic.js.map').write_text(json.dumps({
+                'version': 3,
+                'file': 'dynamic.js',
+                'sources': ['../src/dynamic.ts'],
+            }), encoding='utf-8')
+            static_graph = {
+                'nodes': [
+                    {'id': 'src/server.ts', 'filepath': 'src/server.ts', 'name': 'server.ts', 'dir': 'src', 'classification': 'ENTRY', 'language': 'typescript', 'size': 10, 'mtime': 1, 'depth': 0, 'island_id': -1},
+                    {'id': 'src/dynamic.ts', 'filepath': 'src/dynamic.ts', 'name': 'dynamic.ts', 'dir': 'src', 'classification': 'LEAF', 'language': 'typescript', 'size': 10, 'mtime': 1, 'depth': 1, 'island_id': -1},
+                ],
+                'edges': [],
+                'meta': {'root': str(root), 'languages': ['typescript'], 'import_stats': {'local': 0, 'stdlib': 0, 'external': 0, 'unknown': 0}, 'unsupported_languages': []},
+                'summary': {'counts': {'ENTRY': 1, 'LEAF': 1}, 'total': 2, 'cycle_count': 0, 'island_count': 0, 'max_depth': 1, 'health_score': 100, 'unreachable': 0},
+            }
+            trace = {
+                'language': 'nodejs',
+                'engine': 'node',
+                'entry': {'mode': 'script', 'target': 'dist/server.js', 'args': []},
+                'summary': {'local_edge_count': 1, 'local_edge_hits': 1, 'local_file_access_count': 0, 'local_file_access_hits': 0},
+                'timed_out': False,
+                'elapsed_s': 0.1,
+                'exit_code': 0,
+                'error': None,
+                'file_accesses': [],
+                'edges': [{'source': 'dist/server.js', 'target': 'dist/dynamic.js', 'line': 7, 'language': 'javascript', 'runtime_hits': 1, 'runtime_modules': ['./dynamic.js'], 'runtime_lines': [7]}],
+            }
+
+            merged = merge_runtime_traces(static_graph, [(trace, root / 'runtime_trace.json', False)])
+            dynamic_pairs = {(edge['source'], edge['target']) for edge in merged['dynamic_edges']}
+            self.assertIn(('src/server.ts', 'src/dynamic.ts'), dynamic_pairs)
+            self.assertEqual(merged['meta']['runtime']['dynamic_edges'], 1)
+
+    def test_analyzer_run_merges_multiple_runtime_inputs(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'app').mkdir()
+            (root / 'src').mkdir()
+            (root / 'app' / 'main.py').write_text('print("ok")\n', encoding='utf-8')
+            (root / 'app' / 'plugin.py').write_text('VALUE = 1\n', encoding='utf-8')
+            (root / 'src' / 'index.js').write_text('console.log("ok")\n', encoding='utf-8')
+            (root / 'src' / 'runtime.js').write_text('export const value = 1;\n', encoding='utf-8')
+
+            python_trace = {
+                'language': 'python',
+                'engine': 'python',
+                'entry': {'mode': 'script', 'target': 'app/main.py', 'args': []},
+                'summary': {'local_edge_count': 1, 'local_edge_hits': 1, 'local_file_access_count': 0, 'local_file_access_hits': 0},
+                'timed_out': False,
+                'elapsed_s': 0.1,
+                'exit_code': 0,
+                'error': None,
+                'file_accesses': [],
+                'edges': [{'source': 'app/main.py', 'target': 'app/plugin.py', 'line': 2, 'language': 'python', 'runtime_hits': 1, 'runtime_modules': ['app.plugin'], 'runtime_lines': [2]}],
+            }
+            node_trace = {
+                'language': 'nodejs',
+                'engine': 'node',
+                'entry': {'mode': 'module', 'target': 'src/index.js', 'args': []},
+                'summary': {'local_edge_count': 1, 'local_edge_hits': 1, 'local_file_access_count': 0, 'local_file_access_hits': 0},
+                'timed_out': False,
+                'elapsed_s': 0.2,
+                'exit_code': 0,
+                'error': None,
+                'file_accesses': [],
+                'edges': [{'source': 'src/index.js', 'target': 'src/runtime.js', 'line': 1, 'language': 'javascript', 'runtime_hits': 1, 'runtime_modules': ['./runtime.js'], 'runtime_lines': [1]}],
+            }
+            py_path = root / 'py_runtime.json'
+            node_path = root / 'node_runtime.json'
+            py_path.write_text(json.dumps(python_trace, indent=2), encoding='utf-8')
+            node_path.write_text(json.dumps(node_trace, indent=2), encoding='utf-8')
+
+            graph = analyzer.run(
+                root,
+                verbose=False,
+                runtime_overlays=[
+                    (python_trace, py_path, False),
+                    (node_trace, node_path, False),
+                ],
+            )
+
+            self.assertEqual(graph['meta']['runtime']['session_count'], 2)
+            self.assertEqual(set(graph['meta']['runtime']['languages']), {'python', 'nodejs'})
+            dynamic_pairs = {(edge['source'], edge['target']) for edge in graph['dynamic_edges']}
+            self.assertIn(('app/main.py', 'app/plugin.py'), dynamic_pairs)
+            self.assertIn(('src/index.js', 'src/runtime.js'), dynamic_pairs)
 
 
 if __name__ == '__main__':

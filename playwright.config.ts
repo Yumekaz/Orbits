@@ -35,7 +35,6 @@ export default defineConfig({
       grep: visualBaselinesEnabled ? /@visual/ : /$^/,
       use: {
         browserName: 'chromium',
-        channel: process.platform === 'win32' ? 'msedge' : undefined,
       },
     },
   ],

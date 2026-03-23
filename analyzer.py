@@ -28,7 +28,7 @@ from lang_dispatch import extract_all
 from runtime_trace import (
     NodeRuntimeTraceConfig,
     PythonRuntimeTraceConfig,
-    merge_runtime_trace,
+    merge_runtime_traces,
     run_runtime_trace,
 )
 
@@ -70,12 +70,8 @@ def _save_intentional_state(root: Path, state: dict) -> None:
     _intentional_file_path(root).write_text(json.dumps(state, indent=2), encoding='utf-8')
 
 
-def _load_runtime_overlay(payload: dict) -> tuple[dict, Path] | None:
-    runtime_meta = payload.get('meta', {}).get('runtime', {}) if isinstance(payload, dict) else {}
-    artifact = runtime_meta.get('artifact')
-    if not artifact:
-        return None
-    artifact_path = Path(artifact)
+def _load_runtime_artifact(path: str | Path) -> tuple[dict, Path] | None:
+    artifact_path = Path(path)
     if not artifact_path.exists():
         return None
     try:
@@ -83,6 +79,37 @@ def _load_runtime_overlay(payload: dict) -> tuple[dict, Path] | None:
     except Exception:
         return None
     return trace, artifact_path.resolve()
+
+
+def _load_runtime_overlays(payload: dict) -> list[tuple[dict, Path, bool]]:
+    overlays: list[tuple[dict, Path, bool]] = []
+    if not isinstance(payload, dict):
+        return overlays
+    runtime_meta = payload.get('meta', {}).get('runtime', {})
+    runtime_payload = payload.get('runtime', {}) if isinstance(payload.get('runtime'), dict) else {}
+    sessions = runtime_payload.get('sessions') or runtime_meta.get('sessions') or []
+    if sessions:
+        for session in sessions:
+            if not isinstance(session, dict):
+                continue
+            artifact = session.get('artifact')
+            if not artifact:
+                continue
+            loaded = _load_runtime_artifact(artifact)
+            if not loaded:
+                continue
+            trace, artifact_path = loaded
+            overlays.append((trace, artifact_path, bool(session.get('stale', runtime_meta.get('stale', False)))))
+        return overlays
+    artifact = runtime_meta.get('artifact')
+    if not artifact:
+        return overlays
+    loaded = _load_runtime_artifact(artifact)
+    if not loaded:
+        return overlays
+    trace, artifact_path = loaded
+    overlays.append((trace, artifact_path, bool(runtime_meta.get('stale', False))))
+    return overlays
 
 
 def _blame_summary(root: Path, relpath: str) -> dict:
@@ -126,8 +153,8 @@ def _rerun_graph(graph_path: Path, runtime_stale: bool = False) -> dict:
     root = _graph_root_from_file(graph_path)
     if not root:
         raise FileNotFoundError('Graph root unavailable for re-analysis')
-    overlay = _load_runtime_overlay(previous)
-    refreshed = run(root, verbose=False, runtime_overlay=overlay, runtime_stale=runtime_stale and overlay is not None)
+    overlays = _load_runtime_overlays(previous)
+    refreshed = run(root, verbose=False, runtime_overlays=overlays, runtime_stale=runtime_stale and bool(overlays))
     graph_path.write_text(json.dumps(refreshed, indent=2, ensure_ascii=False), encoding='utf-8')
     return refreshed
 
@@ -317,7 +344,7 @@ def run(
     root: str | Path,
     verbose: bool = True,
     runtime_trace: PythonRuntimeTraceConfig | NodeRuntimeTraceConfig | None = None,
-    runtime_overlay: tuple[dict, Path] | None = None,
+    runtime_overlays: list[tuple[dict, Path] | tuple[dict, Path, bool]] | None = None,
     runtime_stale: bool = False,
 ) -> dict:
     root_path = Path(root).resolve()
@@ -331,13 +358,15 @@ def run(
 
     raw = extract_all(root_path, verbose=verbose)
 
+    overlays = list(runtime_overlays or [])
     if runtime_trace is not None:
         trace = run_runtime_trace(root_path, runtime_trace, verbose=verbose)
         artifact_path = (runtime_trace.output_path or (root_path / 'runtime_trace.json')).resolve()
-        raw = merge_runtime_trace(raw, trace, artifact_path, stale=False)
-    elif runtime_overlay is not None:
-        trace, artifact_path = runtime_overlay
-        raw = merge_runtime_trace(raw, trace, artifact_path, stale=runtime_stale)
+        overlays.append((trace, artifact_path, False))
+    if overlays:
+        if runtime_stale:
+            overlays = [(trace, artifact_path, True) for trace, artifact_path, *_rest in overlays]
+        raw = merge_runtime_traces(raw, overlays)
 
     enriched = analyze_graph(raw)
 
@@ -420,6 +449,7 @@ Examples:
     parser.add_argument('--trace-arg', action='append', default=[], help='Repeatable argument passed to the traced runtime entry or module')
     parser.add_argument('--trace-timeout', type=int, default=60, help='Maximum seconds to allow traced runtime execution before cutting it off')
     parser.add_argument('--runtime-output', default='runtime_trace.json', help='Path for the runtime trace artifact when tracing is enabled')
+    parser.add_argument('--runtime-input', action='append', default=[], help='Existing runtime trace artifact to merge; repeat to include multiple trace sessions')
     parser.add_argument('--node-bin', default=os.environ.get('ORBITS_NODE_BIN', 'node'), help='Node executable to use for Node.js runtime tracing')
     parser.add_argument('--serve', action='store_true', help='Open visualizer in browser after analysis')
     parser.add_argument('--port', type=int, default=8765)
@@ -447,7 +477,15 @@ Examples:
             node_bin=args.node_bin,
         )
 
-    graph = run(args.path, verbose=True, runtime_trace=runtime_trace)
+    runtime_overlays = []
+    for runtime_input in args.runtime_input or []:
+        loaded = _load_runtime_artifact(runtime_input)
+        if not loaded:
+            print(f"ERROR: Runtime trace artifact not found or unreadable: {runtime_input}", file=sys.stderr)
+            sys.exit(1)
+        runtime_overlays.append((*loaded, False))
+
+    graph = run(args.path, verbose=True, runtime_trace=runtime_trace, runtime_overlays=runtime_overlays)
     output_path = Path(args.output).resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(graph, indent=2, ensure_ascii=False), encoding='utf-8')
@@ -465,6 +503,8 @@ Examples:
             print(f"  Warning:   {item['language']} parser unavailable ({item['reason']})", file=sys.stderr)
     runtime_meta = meta.get('runtime', {})
     if runtime_meta.get('enabled'):
+        if runtime_meta.get('session_count', 1) > 1:
+            print(f"  Runtime:   {runtime_meta.get('session_count')} sessions merged", file=sys.stderr)
         print(f"  Runtime:   {runtime_meta.get('artifact')}", file=sys.stderr)
     print(f"  Output:    {output_path}", file=sys.stderr)
     print(f"{'-' * 40}\n", file=sys.stderr)

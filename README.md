@@ -125,6 +125,7 @@ Implemented now:
 - Node.js runtime tracing in a separate subprocess
 - separate `runtime_trace.json` artifact
 - merged runtime edge overlay in `graph.json` via `dynamic_edges`
+- multi-session runtime metadata via `meta.runtime.sessions[]`
 - runtime-aware `view` menu edge modes: `static`, `runtime`, `combined`
 - runtime edge styling in the D3 + canvas visualizer
 - stale runtime overlay preservation across static reanalysis paths
@@ -132,11 +133,12 @@ Implemented now:
 Current scope and honest boundary:
 
 - runtime tracing is shipped for Python and Node.js today
+- multiple runtime artifacts can be merged into one graph as separate runtime sessions
 - static graph metrics like cycles, depth, waste, and health remain static-analysis-based
 - runtime edges are an overlay, not a replacement for the static graph
 - reanalysis preserves prior runtime overlay, but marks it stale after source-changing actions until you retrace
 - Node traces are best for `.js` / `.cjs` / `.mjs` entrypoints; direct TypeScript runtime execution is still not claimed
-- runtime-to-static remapping for transpiled `dist/*.js` to `src/*.ts` is heuristic, not compiler-perfect
+- runtime-to-static remapping for transpiled `dist/*.js` to `src/*.ts` now uses source maps when available, but is still not compiler-perfect
 
 ## Performance Reality
 
@@ -194,6 +196,12 @@ python analyzer.py /path/to/project --trace-node-module myapp.cli --trace-arg=--
 
 It writes a separate runtime artifact and merges into `dynamic_edges` exactly like Python.
 
+You can also merge existing runtime artifacts back into a fresh static analysis:
+
+```bash
+python analyzer.py /path/to/project --runtime-input C:/tmp/python_runtime.json --runtime-input C:/tmp/node_runtime.json
+```
+
 ### Frontend
 
 Install frontend dependencies once:
@@ -243,6 +251,12 @@ Write the runtime artifact somewhere else:
 python analyzer.py /path/to/project --trace-python app.py --runtime-output C:/temp/runtime_trace.json
 ```
 
+Merge one or more existing runtime artifacts into a fresh graph:
+
+```bash
+python analyzer.py /path/to/project --runtime-input C:/temp/python_runtime.json --runtime-input C:/temp/node_runtime.json
+```
+
 Write output somewhere else and still serve correctly:
 
 ```bash
@@ -269,6 +283,7 @@ If runtime data is present, the `view` menu lets you switch between:
 - Missing parser support is surfaced in metadata and UI/CLI messaging
 - Runtime tracing writes to a separate artifact instead of mutating static cache files
 - Source-changing reanalysis preserves runtime overlay but marks it stale until you rerun tracing
+- Multiple runtime traces are preserved as individual sessions and also aggregated into one runtime overlay
 
 ## Visualizer Features
 
@@ -334,6 +349,7 @@ The repo currently includes regression coverage for:
 - Python import-from resolution
 - Python runtime trace capture and merge behavior
 - Node runtime trace capture and merge behavior
+- multi-session runtime merge behavior and Node source-map remapping
 - TypeScript alias resolution
 - Go module resolution
 - C / C++ include resolution

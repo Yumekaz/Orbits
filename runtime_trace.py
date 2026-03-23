@@ -18,6 +18,8 @@ from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from types import ModuleType
 from typing import Any
+from urllib.parse import urlparse
+from urllib.request import url2pathname
 
 
 @dataclass
@@ -651,6 +653,59 @@ def _candidate_node_runtime_ids(raw_id: str) -> list[str]:
 
 
 def _map_runtime_node_id(raw_id: str, node_ids: set[str], trace_language: str) -> str | None:
+    return _map_runtime_node_id_with_root(raw_id, node_ids, trace_language, None)
+
+
+def _source_map_candidates(raw_id: str, root: Path | None) -> list[str]:
+    if root is None:
+        return []
+    normalized = str(raw_id or '').replace('\\', '/').lstrip('./')
+    suffix = PurePosixPath(normalized).suffix.lower()
+    if suffix not in {'.js', '.mjs', '.cjs', '.jsx'}:
+        return []
+
+    source_path = (root / Path(normalized)).resolve()
+    map_path = Path(f'{source_path}.map')
+    if not map_path.exists():
+        return []
+    try:
+        payload = json.loads(map_path.read_text(encoding='utf-8'))
+    except Exception:
+        return []
+
+    source_root = payload.get('sourceRoot', '')
+    seen: set[str] = set()
+    candidates: list[str] = []
+
+    def add_candidate(candidate_path: Path) -> None:
+        try:
+            rel = candidate_path.resolve().relative_to(root.resolve())
+        except Exception:
+            return
+        rel_str = str(rel).replace('\\', '/')
+        if rel_str not in seen:
+            seen.add(rel_str)
+            candidates.append(rel_str)
+
+    for source in payload.get('sources', []):
+        if not isinstance(source, str) or not source or source.startswith(('webpack://', 'node:')):
+            continue
+        try:
+            if source.startswith('file:'):
+                parsed = urlparse(source)
+                candidate = Path(url2pathname(parsed.path))
+            else:
+                base = map_path.parent
+                if source_root:
+                    base = (base / source_root).resolve()
+                candidate = (base / source).resolve()
+        except Exception:
+            continue
+        add_candidate(candidate)
+    return candidates
+
+
+def _map_runtime_node_id_with_root(raw_id: str, node_ids: set[str], trace_language: str, root: Path | None) -> str | None:
     normalized = str(raw_id or '').replace('\\', '/')
     if not normalized:
         return None
@@ -658,33 +713,49 @@ def _map_runtime_node_id(raw_id: str, node_ids: set[str], trace_language: str) -
         return normalized
     if trace_language != 'nodejs':
         return None
+    for candidate in _source_map_candidates(normalized, root):
+        if candidate in node_ids:
+            return candidate
     for candidate in _candidate_node_runtime_ids(normalized):
         if candidate in node_ids:
             return candidate
     return None
 
 
-def merge_runtime_trace(static_graph: dict[str, Any], trace: dict[str, Any], artifact_path: Path, stale: bool = False) -> dict[str, Any]:
+def _normalize_runtime_overlay_item(item: tuple[dict, Path] | tuple[dict, Path, bool]) -> tuple[dict[str, Any], Path, bool]:
+    if len(item) == 2:
+        trace, artifact_path = item
+        return trace, artifact_path, False
+    trace, artifact_path, stale = item
+    return trace, artifact_path, bool(stale)
+
+
+def merge_runtime_traces(
+    static_graph: dict[str, Any],
+    overlays: list[tuple[dict, Path] | tuple[dict, Path, bool]],
+) -> dict[str, Any]:
     merged = {
         **static_graph,
         'nodes': [dict(node) for node in static_graph.get('nodes', [])],
         'edges': [dict(edge) for edge in static_graph.get('edges', [])],
         'dynamic_edges': [],
         'runtime': {
-            'entry': trace.get('entry', {}),
-            'summary': trace.get('summary', {}),
-            'timed_out': bool(trace.get('timed_out', False)),
-            'elapsed_s': trace.get('elapsed_s', 0),
-            'exit_code': trace.get('exit_code', 0),
-            'error': trace.get('error'),
-            'file_accesses': trace.get('file_accesses', []),
-            'artifact': str(artifact_path.resolve()),
-            'stale': bool(stale),
+            'entry': {},
+            'summary': {},
+            'timed_out': False,
+            'elapsed_s': 0,
+            'exit_code': 0,
+            'error': None,
+            'file_accesses': [],
+            'artifact': '',
+            'stale': False,
+            'sessions': [],
+            'languages': [],
         },
         'meta': dict(static_graph.get('meta', {})),
     }
-    trace_language = str(trace.get('language', 'python'))
-    trace_engine = str(trace.get('engine', trace_language))
+    root_str = static_graph.get('meta', {}).get('root')
+    root_path = Path(root_str).resolve() if root_str else None
     node_ids = {str(node.get('id', '')).replace('\\', '/') for node in merged['nodes']}
     static_pairs = {(str(edge.get('source', '')).replace('\\', '/'), str(edge.get('target', '')).replace('\\', '/')) for edge in merged['edges']}
     for edge in merged['edges']:
@@ -692,64 +763,163 @@ def merge_runtime_trace(static_graph: dict[str, Any], trace: dict[str, Any], art
         edge.setdefault('dynamic', False)
         edge.setdefault('runtime_hits', 0)
         edge.setdefault('runtime_modules', [])
-    dynamic_only = 0
-    for item in trace.get('edges', []):
-        source = _map_runtime_node_id(item.get('source', ''), node_ids, trace_language)
-        target = _map_runtime_node_id(item.get('target', ''), node_ids, trace_language)
-        if not source or not target or source == target:
-            continue
-        pair = (source, target)
-        dynamic = pair not in static_pairs
-        if dynamic:
-            dynamic_only += 1
-        merged['dynamic_edges'].append({
-            'source': source,
-            'target': target,
-            'type': item.get('type', 'runtime_import'),
-            'line': item.get('line', -1),
-            'language': item.get('language', 'python'),
-            'origins': ['runtime'],
-            'dynamic': dynamic,
-            'runtime_hits': int(item.get('runtime_hits', item.get('count', 0) or 0)),
-            'runtime_modules': list(item.get('runtime_modules', [])),
-            'runtime_lines': list(item.get('runtime_lines', [])),
-        })
-    session = {
-        'language': trace_language,
-        'engine': trace_engine,
-        'artifact': str(artifact_path.resolve()),
-        'entrypoint': trace.get('entry', {}).get('target', ''),
-        'entry_mode': trace.get('entry', {}).get('mode', 'script'),
-        'args': list(trace.get('entry', {}).get('args', [])),
-        'elapsed_s': trace.get('elapsed_s', 0),
-        'runtime_edges': len(merged['dynamic_edges']),
-        'dynamic_edges': dynamic_only,
-        'file_accesses': len(trace.get('file_accesses', [])),
-        'timed_out': bool(trace.get('timed_out', False)),
-        'exit_code': trace.get('exit_code', 0),
-        'stale': bool(stale),
-        'error': trace.get('error'),
+    dynamic_edge_map: dict[tuple[str, str], dict[str, Any]] = {}
+    aggregate_dynamic_pairs: set[tuple[str, str]] = set()
+    runtime_file_accesses: list[dict[str, Any]] = []
+    sessions: list[dict[str, Any]] = []
+    aggregate_languages: list[str] = []
+    total_elapsed = 0.0
+    total_edge_hits = 0
+    total_import_calls = 0
+    total_external_import_calls = 0
+    total_file_access_hits = 0
+    errors: list[str] = []
+
+    for index, overlay in enumerate(overlays):
+        trace, artifact_path, stale = _normalize_runtime_overlay_item(overlay)
+        trace_language = str(trace.get('language', 'python'))
+        trace_engine = str(trace.get('engine', trace_language))
+        session_pairs: set[tuple[str, str]] = set()
+        session_dynamic_pairs: set[tuple[str, str]] = set()
+        for item in trace.get('edges', []):
+            source = _map_runtime_node_id_with_root(item.get('source', ''), node_ids, trace_language, root_path)
+            target = _map_runtime_node_id_with_root(item.get('target', ''), node_ids, trace_language, root_path)
+            if not source or not target or source == target:
+                continue
+            pair = (source, target)
+            dynamic = pair not in static_pairs
+            session_pairs.add(pair)
+            if dynamic:
+                session_dynamic_pairs.add(pair)
+                aggregate_dynamic_pairs.add(pair)
+            edge = dynamic_edge_map.setdefault(pair, {
+                'source': source,
+                'target': target,
+                'type': item.get('type', 'runtime_import'),
+                'line': item.get('line', -1),
+                'language': item.get('language', trace_language),
+                'origins': ['runtime'],
+                'dynamic': dynamic,
+                'runtime_hits': 0,
+                'runtime_modules': set(),
+                'runtime_lines': set(),
+                'runtime_sessions': set(),
+            })
+            edge['dynamic'] = edge['dynamic'] or dynamic
+            line = int(item.get('line', -1) or -1)
+            if line > 0 and (edge['line'] <= 0 or line < edge['line']):
+                edge['line'] = line
+            edge['runtime_hits'] += int(item.get('runtime_hits', item.get('count', 0) or 0))
+            edge['runtime_modules'].update(item.get('runtime_modules', []))
+            edge['runtime_lines'].update(item.get('runtime_lines', []))
+            edge['runtime_sessions'].add(index)
+
+        session_artifact = str(artifact_path.resolve())
+        session = {
+            'language': trace_language,
+            'engine': trace_engine,
+            'artifact': session_artifact,
+            'entrypoint': trace.get('entry', {}).get('target', ''),
+            'entry_mode': trace.get('entry', {}).get('mode', 'script'),
+            'args': list(trace.get('entry', {}).get('args', [])),
+            'elapsed_s': trace.get('elapsed_s', 0),
+            'runtime_edges': len(session_pairs),
+            'dynamic_edges': len(session_dynamic_pairs),
+            'file_accesses': len(trace.get('file_accesses', [])),
+            'timed_out': bool(trace.get('timed_out', False)),
+            'exit_code': trace.get('exit_code', 0),
+            'stale': bool(stale),
+            'error': trace.get('error'),
+        }
+        sessions.append(session)
+        aggregate_languages.append(trace_language)
+        total_elapsed += float(trace.get('elapsed_s', 0) or 0)
+        summary = trace.get('summary', {})
+        total_edge_hits += int(summary.get('local_edge_hits', 0) or 0)
+        total_import_calls += int(summary.get('import_calls', 0) or 0)
+        total_external_import_calls += int(summary.get('external_import_calls', 0) or 0)
+        total_file_access_hits += int(summary.get('local_file_access_hits', 0) or 0)
+        if trace.get('error'):
+            errors.append(str(trace.get('error')))
+
+        for access in trace.get('file_accesses', []):
+            runtime_file_accesses.append({
+                **dict(access),
+                'language': trace_language,
+                'artifact': session_artifact,
+                'stale': bool(stale),
+            })
+
+    merged['dynamic_edges'] = [
+        {
+            **edge,
+            'runtime_modules': sorted(edge['runtime_modules']),
+            'runtime_lines': sorted(int(line) for line in edge['runtime_lines']),
+            'runtime_sessions': sorted(edge['runtime_sessions']),
+        }
+        for edge in sorted(dynamic_edge_map.values(), key=lambda item: (item['source'], item['target']))
+    ]
+
+    latest = sessions[-1] if sessions else {}
+    language_set = sorted({lang for lang in aggregate_languages if lang})
+    aggregate_language = language_set[0] if len(language_set) == 1 else ('mixed' if language_set else '')
+    engine_set = sorted({session['engine'] for session in sessions if session.get('engine')})
+    aggregate_engine = engine_set[0] if len(engine_set) == 1 else ('mixed' if engine_set else '')
+    aggregate_error = '; '.join(dict.fromkeys(errors)) if errors else None
+    aggregate_timed_out = any(session.get('timed_out') for session in sessions)
+    aggregate_stale = any(session.get('stale') for session in sessions)
+
+    merged['runtime'] = {
+        'entry': {
+            'mode': latest.get('entry_mode', 'script'),
+            'target': latest.get('entrypoint', ''),
+            'args': list(latest.get('args', [])),
+        },
+        'summary': {
+            'session_count': len(sessions),
+            'import_calls': total_import_calls,
+            'external_import_calls': total_external_import_calls,
+            'local_edge_hits': total_edge_hits,
+            'local_edge_count': len(merged['dynamic_edges']),
+            'local_file_access_hits': total_file_access_hits,
+            'local_file_access_count': len(runtime_file_accesses),
+        },
+        'timed_out': aggregate_timed_out,
+        'elapsed_s': round(total_elapsed, 3),
+        'exit_code': latest.get('exit_code', 0),
+        'error': aggregate_error,
+        'file_accesses': runtime_file_accesses,
+        'artifact': latest.get('artifact', ''),
+        'stale': aggregate_stale,
+        'sessions': sessions,
+        'languages': language_set,
     }
     merged['meta']['runtime'] = {
-        'enabled': True,
-        'language': trace_language,
-        'engine': trace_engine,
-        'artifact': str(artifact_path.resolve()),
-        'entrypoint': trace.get('entry', {}).get('target', ''),
-        'entry_mode': trace.get('entry', {}).get('mode', 'script'),
-        'args': list(trace.get('entry', {}).get('args', [])),
-        'elapsed_s': trace.get('elapsed_s', 0),
+        'enabled': bool(sessions),
+        'language': aggregate_language,
+        'languages': language_set,
+        'engine': aggregate_engine,
+        'artifact': latest.get('artifact', ''),
+        'artifacts': [session['artifact'] for session in sessions],
+        'entrypoint': latest.get('entrypoint', ''),
+        'entry_mode': latest.get('entry_mode', 'script'),
+        'args': list(latest.get('args', [])),
+        'elapsed_s': round(total_elapsed, 3),
         'runtime_edges': len(merged['dynamic_edges']),
-        'dynamic_edges': dynamic_only,
-        'file_accesses': len(trace.get('file_accesses', [])),
-        'timed_out': bool(trace.get('timed_out', False)),
-        'exit_code': trace.get('exit_code', 0),
-        'stale': bool(stale),
-        'error': trace.get('error'),
-        'sessions': [session],
+        'dynamic_edges': len(aggregate_dynamic_pairs),
+        'file_accesses': len(runtime_file_accesses),
+        'timed_out': aggregate_timed_out,
+        'exit_code': latest.get('exit_code', 0),
+        'stale': aggregate_stale,
+        'error': aggregate_error,
+        'sessions': sessions,
+        'session_count': len(sessions),
     }
-    merged['runtime']['sessions'] = [session]
     return merged
+
+
+def merge_runtime_trace(static_graph: dict[str, Any], trace: dict[str, Any], artifact_path: Path, stale: bool = False) -> dict[str, Any]:
+    return merge_runtime_traces(static_graph, [(trace, artifact_path, stale)])
 
 
 def _main(argv: list[str] | None = None) -> int:
