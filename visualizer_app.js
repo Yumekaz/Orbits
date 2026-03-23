@@ -34,6 +34,7 @@
     worker: null,
     workerRequestId: 0,
     pendingRender: 0,
+    shellRefreshTimer: 0,
     debounceSearch: 0,
     canvas: null,
     ctx: null,
@@ -315,6 +316,14 @@
       return;
     }
     if (type === 'error') { hideWorkerStatus(); toast(payload.message || 'Worker failed'); }
+  }
+
+  function persistLayoutPositions() {
+    if (!APP.indexes?.hash || !APP.layoutPositions?.size) return;
+    try {
+      const payload = Object.fromEntries([...APP.layoutPositions.entries()].map(([id, pos]) => [id, { x: pos.x, y: pos.y }]));
+      localStorage.setItem(cacheKey(APP.indexes.hash, APP.state.layoutMode), JSON.stringify(payload));
+    } catch { }
   }
 
   function buildIndexes(graph) {
@@ -653,10 +662,21 @@
           if (target) APP.layoutPositions.set(id, { x: target.x, y: target.y });
         });
         APP.dragReleaseFrame = 0;
+        persistLayoutPositions();
         scheduleRender();
       }
     };
     APP.dragReleaseFrame = requestAnimationFrame(tick);
+  }
+
+  function commitDraggedNodePosition(nodeId) {
+    if (!nodeId) return;
+    const simNode = APP.simNodeById.get(nodeId);
+    const pos = simNode ? { x: simNode.x, y: simNode.y } : APP.layoutPositions.get(nodeId);
+    if (!pos || !Number.isFinite(pos.x) || !Number.isFinite(pos.y)) return;
+    APP.layoutPositions.set(nodeId, { x: pos.x, y: pos.y });
+    APP.anchorPositions.set(nodeId, { x: pos.x, y: pos.y });
+    persistLayoutPositions();
   }
 
   function nodePriority(node, selectedId, searchTree) {
@@ -1453,6 +1473,7 @@
     window.addEventListener('mouseup', () => {
       if (APP.draggingNodeId) {
         if (APP.motionEnabled) {
+          if (APP.dragMoved) commitDraggedNodePosition(APP.draggingNodeId);
           const simNode = APP.simNodeById.get(APP.draggingNodeId);
           if (simNode) {
             simNode.fx = null;
@@ -1521,10 +1542,20 @@
   }
 
   function refreshViewportAfterShellChange() {
-    setTimeout(() => {
+    const refresh = () => {
       resizeCanvas();
       scheduleRender();
-    }, 320);
+    };
+    refresh();
+    requestAnimationFrame(() => {
+      refresh();
+      requestAnimationFrame(refresh);
+    });
+    if (APP.shellRefreshTimer) clearTimeout(APP.shellRefreshTimer);
+    APP.shellRefreshTimer = setTimeout(() => {
+      APP.shellRefreshTimer = 0;
+      refresh();
+    }, 340);
   }
 
   function debugNodeCanvasPoint(id) {
