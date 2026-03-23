@@ -15,16 +15,14 @@ The current stack is:
 From the repo root:
 
 1. Create and activate a local venv.
-2. Install Python dependencies into that venv.
-3. Install frontend dependencies once.
-4. Run the analyzer with `--serve`.
+2. Install frontend dependencies once.
+3. Run the analyzer with `--serve`.
 
 ### Windows PowerShell
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
 npm install
 python analyzer.py . --serve
 ```
@@ -116,6 +114,25 @@ Implemented in the current UI:
 Not implemented as originally claimed in older docs:
 
 - Cytoscape.js / react-force-graph as the active renderer
+
+### Visual Baselines
+
+Stage 2 visual regression is opt-in and does not run in the default `test:e2e` path.
+
+Generate or refresh baselines:
+
+```powershell
+npm run test:e2e:visual:update
+```
+
+Compare against existing baselines:
+
+```powershell
+npm run test:e2e:visual
+```
+
+Baseline screenshots live in `e2e/visual.spec.ts-snapshots/` and are committed once approved.
+The dedicated Playwright screenshot script at `scripts/visual-baselines.mjs` keeps visual regression opt-in and out of the default `test:e2e` run.
 
 ## Phase 5 Status
 
@@ -210,7 +227,7 @@ Install frontend dependencies once:
 npm install
 ```
 
-The active frontend uses D3. A Cytoscape dependency may still exist in `package.json`, but it is not the active renderer path.
+The active frontend uses D3. Cytoscape is not the active renderer path.
 
 ## Usage
 

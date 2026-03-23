@@ -1,9 +1,8 @@
 import { defineConfig } from '@playwright/test';
 
 const webServerCommand = process.platform === 'win32'
-  ? 'powershell -Command ".\\.venv\\Scripts\\python.exe analyzer.py . --serve --port 8766"'
+  ? '.\\.venv\\Scripts\\python.exe analyzer.py . --serve --port 8766'
   : './.venv/bin/python analyzer.py . --serve --port 8766';
-const visualBaselinesEnabled = process.env.ORBITS_VISUAL_BASELINES === '1' || process.env.npm_lifecycle_event === 'test:e2e:visual';
 
 export default defineConfig({
   testDir: './e2e',
@@ -27,14 +26,6 @@ export default defineConfig({
       use: {
         browserName: 'chromium',
         channel: process.platform === 'win32' ? 'msedge' : undefined,
-      },
-    },
-    {
-      name: 'visual',
-      testMatch: '**/visual.spec.ts',
-      grep: visualBaselinesEnabled ? /@visual/ : /$^/,
-      use: {
-        browserName: 'chromium',
       },
     },
   ],

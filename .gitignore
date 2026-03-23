@@ -58,6 +58,7 @@ Thumbs.db
 node_modules/
 .yarn/
 .npm/
+.npm-cache/
 out/
 target/
 bin/
@@ -69,8 +70,11 @@ __MACOSX/
 *.sqlite
 *.sqlite3
 .orbits_cache.json
+.orbits_cache_benchmark.json
 graph.json
 test-results/
 playwright-report/
 
 runtime_trace.json
+visualizer_app_backup.js
+visualizer_test.html

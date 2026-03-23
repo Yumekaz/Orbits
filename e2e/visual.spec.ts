@@ -7,6 +7,7 @@ test.describe('@visual screenshot baselines', () => {
     await settleVisualFrame(page);
     await expect(page.locator('#app')).toHaveScreenshot('default-small-graph.png', {
       animations: 'disabled',
+      caret: 'hide',
       maxDiffPixelRatio: 0.003,
     });
   });
@@ -17,6 +18,7 @@ test.describe('@visual screenshot baselines', () => {
     await settleVisualFrame(page);
     await expect(page.locator('#app')).toHaveScreenshot('selected-node.png', {
       animations: 'disabled',
+      caret: 'hide',
       maxDiffPixelRatio: 0.003,
     });
   });
@@ -28,6 +30,7 @@ test.describe('@visual screenshot baselines', () => {
     await settleVisualFrame(page);
     await expect(page.locator('#app')).toHaveScreenshot('search-active.png', {
       animations: 'disabled',
+      caret: 'hide',
       maxDiffPixelRatio: 0.003,
     });
   });
@@ -38,6 +41,7 @@ test.describe('@visual screenshot baselines', () => {
     await settleVisualFrame(page);
     await expect(page.locator('#app')).toHaveScreenshot('collapsed-left-rail.png', {
       animations: 'disabled',
+      caret: 'hide',
       maxDiffPixelRatio: 0.003,
     });
   });
@@ -48,6 +52,7 @@ test.describe('@visual screenshot baselines', () => {
     await settleVisualFrame(page);
     await expect(page.locator('#app')).toHaveScreenshot('cycles-panel-open.png', {
       animations: 'disabled',
+      caret: 'hide',
       maxDiffPixelRatio: 0.003,
     });
   });
