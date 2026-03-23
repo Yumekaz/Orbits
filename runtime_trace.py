@@ -559,6 +559,10 @@ def _build_cpp_runtime_payload(
     timed_out: bool,
     error: str | None = None,
 ) -> dict[str, Any]:
+    symbol_binding_count = sum(
+        int(edge.get('runtime_symbol_hits', 0) or len(edge.get('runtime_symbols', []) or []))
+        for edge in edges
+    )
     return {
         'version': 1,
         'language': 'cpp',
@@ -583,36 +587,85 @@ def _build_cpp_runtime_payload(
             'local_edge_count': len(edges),
             'local_file_access_hits': 0,
             'local_file_access_count': 0,
+            'symbol_binding_count': symbol_binding_count,
         },
     }
 
 
-def _parse_linux_loader_edges(stderr: str, root: Path, entry_rel: str) -> list[dict[str, Any]]:
-    hits: dict[str, int] = {}
-    for line in (stderr or '').splitlines():
-        match = re.search(r'calling init:\s*(.+)$', line)
-        if not match:
-            continue
-        rel = relative_to_root(match.group(1).strip(), root)
-        if not rel or rel == entry_rel or Path(rel).suffix.lower() not in _CPP_RUNTIME_EXTENSIONS:
-            continue
-        hits[rel] = hits.get(rel, 0) + 1
+def _record_cpp_runtime_edge(
+    edge_map: dict[tuple[str, str], dict[str, Any]],
+    source: str,
+    target: str,
+    edge_type: str,
+    symbol: str | None = None,
+) -> None:
+    key = (source, target)
+    edge = edge_map.setdefault(key, {
+        'source': source,
+        'target': target,
+        'type': edge_type,
+        'line': -1,
+        'language': 'cpp',
+        'runtime': True,
+        'origins': ['runtime'],
+        'dynamic': True,
+        'runtime_hits': 0,
+        'runtime_modules': [target],
+        'runtime_lines': [],
+        'runtime_symbols': set(),
+        'runtime_symbol_hits': 0,
+    })
+    edge['runtime_hits'] += 1
+    if symbol:
+        edge['type'] = 'runtime_bind'
+        edge['runtime_symbols'].add(symbol)
+        edge['runtime_symbol_hits'] += 1
+
+
+def _finalize_cpp_runtime_edges(edge_map: dict[tuple[str, str], dict[str, Any]]) -> list[dict[str, Any]]:
     return [
         {
-            'source': entry_rel,
-            'target': target,
-            'type': 'runtime_load',
-            'line': -1,
-            'language': 'cpp',
-            'runtime': True,
-            'origins': ['runtime'],
-            'dynamic': True,
-            'runtime_hits': count,
-            'runtime_modules': [target],
-            'runtime_lines': [],
+            **edge,
+            'runtime_symbols': sorted(edge['runtime_symbols']),
         }
-        for target, count in sorted(hits.items())
+        for _, edge in sorted(edge_map.items())
     ]
+
+
+def _is_local_cpp_artifact(relpath: str | None, entry_rel: str) -> bool:
+    if not relpath:
+        return False
+    if relpath == entry_rel:
+        return True
+    suffix = Path(relpath).suffix.lower()
+    return suffix in _CPP_RUNTIME_EXTENSIONS
+
+
+def _parse_linux_loader_edges(stderr: str, root: Path, entry_rel: str) -> list[dict[str, Any]]:
+    edges: dict[tuple[str, str], dict[str, Any]] = {}
+    for line in (stderr or '').splitlines():
+        match = re.search(r'calling init:\s*(.+)$', line)
+        if match:
+            rel = relative_to_root(match.group(1).strip(), root)
+            if rel and rel != entry_rel and _is_local_cpp_artifact(rel, entry_rel):
+                _record_cpp_runtime_edge(edges, entry_rel, rel, 'runtime_load')
+            continue
+
+        binding = re.search(
+            r"binding file\s+(.+?)\s+\[\d+\]\s+to\s+(.+?)\s+\[\d+\]:\s+(?:normal|weak|protected)?\s*symbol\s+[`'\"]?([^`'\"]+)[`'\"]?",
+            line,
+        )
+        if not binding:
+            continue
+        source_rel = relative_to_root(binding.group(1).strip(), root)
+        target_rel = relative_to_root(binding.group(2).strip(), root)
+        symbol = binding.group(3).strip()
+        if not _is_local_cpp_artifact(source_rel, entry_rel) or not _is_local_cpp_artifact(target_rel, entry_rel):
+            continue
+        if not source_rel or not target_rel or source_rel == target_rel:
+            continue
+        _record_cpp_runtime_edge(edges, source_rel, target_rel, 'runtime_bind', symbol=symbol)
+    return _finalize_cpp_runtime_edges(edges)
 
 
 def _parse_macos_loader_edges(stderr: str, root: Path, entry_rel: str) -> list[dict[str, Any]]:
@@ -661,9 +714,10 @@ def run_cpp_runtime_trace(root: Path, config: CppRuntimeTraceConfig, verbose: bo
     env = os.environ.copy()
     engine = ''
     if sys.platform.startswith('linux'):
-        env['LD_DEBUG'] = 'libs'
+        env['LD_DEBUG'] = 'libs,bindings'
         env.setdefault('LD_BIND_NOW', '1')
-        engine = 'ld_debug'
+        env.setdefault('LD_BIND_NOT', '1')
+        engine = 'ld_debug_bindings'
     elif sys.platform == 'darwin':
         env['DYLD_PRINT_LIBRARIES'] = '1'
         engine = 'dyld'
@@ -815,6 +869,7 @@ _NODE_RUNTIME_ALT_EXTENSIONS = ('.ts', '.tsx', '.mts', '.cts', '.jsx', '.js', '.
 _NODE_RUNTIME_BUILD_PREFIXES = ('dist', 'build', 'out', 'lib')
 _NODE_RUNTIME_SOURCE_EXTENSIONS = {'.ts', '.tsx', '.mts', '.cts', '.jsx', '.js', '.mjs', '.cjs'}
 _CPP_RUNTIME_EXTENSIONS = {'.so', '.dylib', '.dll', '.exe'}
+_SOURCE_MAP_BUNDLER_SCHEMES = ('webpack://', 'vite://', 'rollup://', 'parcel://', 'ng://', 'meteor://')
 
 
 def _candidate_node_runtime_ids(raw_id: str) -> list[str]:
@@ -869,13 +924,143 @@ def _map_runtime_node_id(raw_id: str, node_ids: set[str], trace_language: str) -
     return _map_runtime_node_id_with_root(raw_id, node_ids, trace_language, None)
 
 
+def _strip_source_map_noise(value: str | None) -> str:
+    cleaned = str(value or '').strip().strip('"').strip("'")
+    if not cleaned:
+        return ''
+    if '#' in cleaned:
+        cleaned = cleaned.split('#', 1)[0]
+    if '?' in cleaned:
+        cleaned = cleaned.split('?', 1)[0]
+    return cleaned.strip()
+
+
+def _source_map_repo_hints(value: str | None) -> list[str]:
+    cleaned = _strip_source_map_noise(value)
+    if not cleaned or cleaned.startswith('file:') or cleaned.startswith('node:'):
+        return []
+
+    candidates: list[str] = []
+    seen: set[str] = set()
+
+    def add(candidate: str) -> None:
+        normalized = candidate.replace('\\', '/').strip()
+        if '/./' in normalized:
+            normalized = normalized.split('/./', 1)[1]
+        if normalized.startswith('./'):
+            normalized = normalized[2:]
+        if normalized.startswith('~/'):
+            normalized = normalized[2:]
+        if normalized.startswith('/'):
+            normalized = normalized.lstrip('/')
+        if normalized and normalized not in seen:
+            seen.add(normalized)
+            candidates.append(normalized)
+
+    if any(cleaned.startswith(prefix) for prefix in _SOURCE_MAP_BUNDLER_SCHEMES):
+        _, remainder = cleaned.split('://', 1)
+        remainder = remainder.lstrip('/')
+        add(remainder)
+        if '/' in remainder:
+            add(remainder.split('/', 1)[1])
+        return candidates
+
+    add(cleaned)
+    return candidates
+
+
+def _source_map_root_bases(source_root: str | None, map_parent: Path, root: Path | None) -> list[Path]:
+    cleaned = _strip_source_map_noise(source_root)
+    bases: list[Path] = [map_parent]
+    seen: set[str] = {str(map_parent.resolve())}
+    if not cleaned:
+        return bases
+
+    def add(base: Path) -> None:
+        resolved = base.resolve()
+        key = str(resolved)
+        if key not in seen:
+            seen.add(key)
+            bases.append(resolved)
+
+    if cleaned.startswith('file:'):
+        try:
+            add(Path(url2pathname(urlparse(cleaned).path)))
+        except Exception:
+            return bases
+        return bases
+
+    if any(cleaned.startswith(prefix) for prefix in _SOURCE_MAP_BUNDLER_SCHEMES):
+        if root is not None:
+            for hint in _source_map_repo_hints(cleaned):
+                add(root / hint)
+        return bases
+
+    source_root_path = Path(cleaned)
+    if source_root_path.is_absolute():
+        add(source_root_path)
+        if root is not None:
+            add(root / cleaned.lstrip('/\\'))
+        return bases
+
+    add(map_parent / cleaned)
+    if root is not None:
+        hint = cleaned.lstrip('./')
+        if hint:
+            add(root / hint)
+    return bases
+
+
+def _path_exists_under_root(rel_id: str, root: Path | None) -> bool:
+    if root is None or not rel_id:
+        return False
+    try:
+        candidate = (root / rel_id).resolve()
+    except Exception:
+        return False
+    if not candidate.exists():
+        return False
+    return relative_to_root(candidate, root.resolve()) == rel_id
+
+
+def _runtime_path_candidates(raw_id: str, trace_language: str, root: Path | None) -> list[str]:
+    normalized = str(raw_id or '').replace('\\', '/').lstrip('./')
+    if not normalized:
+        return []
+
+    candidates: list[str] = []
+    seen: set[str] = set()
+
+    def add(candidate: str | None) -> None:
+        value = str(candidate or '').replace('\\', '/').lstrip('./')
+        if value and value not in seen:
+            seen.add(value)
+            candidates.append(value)
+
+    if trace_language == 'cpp':
+        add(_native_project_rel(normalized, root))
+        return candidates
+
+    if trace_language == 'nodejs':
+        for candidate in _source_map_candidates(normalized, root):
+            add(candidate)
+        for candidate in _candidate_node_runtime_ids(normalized):
+            if candidate != normalized:
+                add(candidate)
+        add(normalized)
+        return candidates
+
+    add(normalized)
+    return candidates
+
+
 def _extract_source_mapping_url(source_path: Path) -> str | None:
     try:
         text = source_path.read_text(encoding='utf-8', errors='replace')
     except Exception:
         return None
     matches = re.findall(r'[#@]\s*sourceMappingURL\s*=\s*([^\s*]+)', text)
-    return matches[-1].strip() if matches else None
+    return _strip_source_map_noise(matches[-1]) if matches else None
 
 
 def _decode_inline_source_map(url: str) -> dict[str, Any] | None:
@@ -936,7 +1121,7 @@ def _source_map_candidates(raw_id: str, root: Path | None) -> list[str]:
     if not payload:
         return []
 
-    source_root = payload.get('sourceRoot', '')
+    source_root = str(payload.get('sourceRoot', '') or '')
     seen: set[str] = set()
     candidates: list[str] = []
 
@@ -949,41 +1134,40 @@ def _source_map_candidates(raw_id: str, root: Path | None) -> list[str]:
             candidates.append(rel_str)
 
     map_parent = map_path.parent if map_path is not None else source_path.parent
+    root_bases = _source_map_root_bases(source_root, map_parent, root.resolve())
     for source in _iter_source_map_sources(payload):
-        if not isinstance(source, str) or not source or source.startswith(('webpack://', 'node:')):
+        if not isinstance(source, str):
+            continue
+        source_token = _strip_source_map_noise(source)
+        if not source_token or source_token.startswith('node:'):
             continue
         try:
-            if source.startswith('file:'):
-                parsed = urlparse(source)
-                candidate = Path(url2pathname(parsed.path))
-            else:
-                base = map_parent
-                if source_root:
-                    base = (base / source_root).resolve()
-                candidate = (base / source).resolve()
+            if source_token.startswith('file:'):
+                parsed = urlparse(source_token)
+                add_candidate(Path(url2pathname(parsed.path)))
+                continue
+            if Path(source_token).is_absolute():
+                add_candidate(Path(source_token))
+                add_candidate(root.resolve() / source_token.lstrip('/\\'))
+            for hint in _source_map_repo_hints(source_token):
+                add_candidate(root.resolve() / hint)
+            if '://' in source_token and not source_token.startswith('file:'):
+                continue
+            for base in root_bases:
+                add_candidate((base / source_token).resolve())
+                for hint in _source_map_repo_hints(source_token):
+                    add_candidate((base / hint).resolve())
         except Exception:
             continue
-        add_candidate(candidate)
     return candidates
 
 
 def _map_runtime_node_id_with_root(raw_id: str, node_ids: set[str], trace_language: str, root: Path | None) -> str | None:
-    normalized = str(raw_id or '').replace('\\', '/')
-    if not normalized:
-        return None
-    if normalized in node_ids:
-        return normalized
-    if trace_language == 'cpp':
-        rel = _native_project_rel(normalized, root)
-        if rel:
-            return rel
-    if trace_language != 'nodejs':
-        return None
-    for candidate in _source_map_candidates(normalized, root):
+    for candidate in _runtime_path_candidates(raw_id, trace_language, root):
         if candidate in node_ids:
             return candidate
-    for candidate in _candidate_node_runtime_ids(normalized):
-        if candidate in node_ids:
+    for candidate in _runtime_path_candidates(raw_id, trace_language, root):
+        if trace_language in {'nodejs', 'cpp'} and _path_exists_under_root(candidate, root):
             return candidate
     return None
 
@@ -1016,6 +1200,32 @@ def _ensure_runtime_node(
         'runtime_only': True,
     })
     node_ids.add(rel_id)
+
+
+def _infer_runtime_only_language(rel_id: str, trace_language: str) -> str:
+    ext = PurePosixPath(rel_id).suffix.lower()
+    if trace_language == 'nodejs':
+        if ext in {'.ts', '.mts', '.cts'}:
+            return 'typescript'
+        if ext in {'.tsx', '.jsx'}:
+            return 'tsx'
+        return 'javascript'
+    return trace_language
+
+
+def _resolve_runtime_node_id(
+    merged: dict[str, Any],
+    node_ids: set[str],
+    raw_id: str,
+    trace_language: str,
+    root: Path | None,
+) -> str | None:
+    mapped = _map_runtime_node_id_with_root(raw_id, node_ids, trace_language, root)
+    if not mapped:
+        return None
+    if trace_language in {'nodejs', 'cpp'} and mapped not in node_ids and _path_exists_under_root(mapped, root):
+        _ensure_runtime_node(merged, node_ids, mapped, _infer_runtime_only_language(mapped, trace_language), root)
+    return mapped
 
 
 def _normalize_runtime_overlay_item(item: tuple[dict, Path] | tuple[dict, Path, bool]) -> tuple[dict[str, Any], Path, bool]:
@@ -1069,6 +1279,7 @@ def merge_runtime_traces(
     total_import_calls = 0
     total_external_import_calls = 0
     total_file_access_hits = 0
+    total_symbol_binding_hits = 0
     errors: list[str] = []
 
     for index, overlay in enumerate(overlays):
@@ -1078,13 +1289,8 @@ def merge_runtime_traces(
         session_pairs: set[tuple[str, str]] = set()
         session_dynamic_pairs: set[tuple[str, str]] = set()
         for item in trace.get('edges', []):
-            if trace_language == 'cpp':
-                for raw_path in (item.get('source', ''), item.get('target', '')):
-                    rel = _native_project_rel(raw_path, root_path)
-                    if rel:
-                        _ensure_runtime_node(merged, node_ids, rel, trace_language, root_path)
-            source = _map_runtime_node_id_with_root(item.get('source', ''), node_ids, trace_language, root_path)
-            target = _map_runtime_node_id_with_root(item.get('target', ''), node_ids, trace_language, root_path)
+            source = _resolve_runtime_node_id(merged, node_ids, item.get('source', ''), trace_language, root_path)
+            target = _resolve_runtime_node_id(merged, node_ids, item.get('target', ''), trace_language, root_path)
             if not source or not target or source == target:
                 continue
             pair = (source, target)
@@ -1104,6 +1310,8 @@ def merge_runtime_traces(
                 'runtime_hits': 0,
                 'runtime_modules': set(),
                 'runtime_lines': set(),
+                'runtime_symbols': set(),
+                'runtime_symbol_hits': 0,
                 'runtime_sessions': set(),
             })
             edge['dynamic'] = edge['dynamic'] or dynamic
@@ -1113,14 +1321,19 @@ def merge_runtime_traces(
             edge['runtime_hits'] += int(item.get('runtime_hits', item.get('count', 0) or 0))
             edge['runtime_modules'].update(item.get('runtime_modules', []))
             edge['runtime_lines'].update(item.get('runtime_lines', []))
+            edge['runtime_symbols'].update(item.get('runtime_symbols', []))
+            edge['runtime_symbol_hits'] += int(item.get('runtime_symbol_hits', 0) or len(item.get('runtime_symbols', []) or []))
             edge['runtime_sessions'].add(index)
 
         session_artifact = str(artifact_path.resolve())
+        entry_target = _map_runtime_node_id_with_root(trace.get('entry', {}).get('target', ''), node_ids, trace_language, root_path) or trace.get('entry', {}).get('target', '')
+        if trace_language in {'nodejs', 'cpp'} and entry_target and entry_target not in node_ids and _path_exists_under_root(entry_target, root_path):
+            _ensure_runtime_node(merged, node_ids, entry_target, _infer_runtime_only_language(entry_target, trace_language), root_path)
         session = {
             'language': trace_language,
             'engine': trace_engine,
             'artifact': session_artifact,
-            'entrypoint': trace.get('entry', {}).get('target', ''),
+            'entrypoint': entry_target,
             'entry_mode': trace.get('entry', {}).get('mode', 'script'),
             'args': list(trace.get('entry', {}).get('args', [])),
             'elapsed_s': trace.get('elapsed_s', 0),
@@ -1140,12 +1353,20 @@ def merge_runtime_traces(
         total_import_calls += int(summary.get('import_calls', 0) or 0)
         total_external_import_calls += int(summary.get('external_import_calls', 0) or 0)
         total_file_access_hits += int(summary.get('local_file_access_hits', 0) or 0)
+        total_symbol_binding_hits += int(
+            summary.get('symbol_binding_count', 0)
+            or sum(int(item.get('runtime_symbol_hits', 0) or len(item.get('runtime_symbols', []) or [])) for item in trace.get('edges', []))
+        )
         if trace.get('error'):
             errors.append(str(trace.get('error')))
 
         for access in trace.get('file_accesses', []):
+            access_source = _map_runtime_node_id_with_root(access.get('source', ''), node_ids, trace_language, root_path) or access.get('source', '')
+            access_path = _map_runtime_node_id_with_root(access.get('path', ''), node_ids, trace_language, root_path) or access.get('path', '')
             runtime_file_accesses.append({
                 **dict(access),
+                'source': access_source,
+                'path': access_path,
                 'language': trace_language,
                 'artifact': session_artifact,
                 'stale': bool(stale),
@@ -1156,6 +1377,7 @@ def merge_runtime_traces(
             **edge,
             'runtime_modules': sorted(edge['runtime_modules']),
             'runtime_lines': sorted(int(line) for line in edge['runtime_lines']),
+            'runtime_symbols': sorted(edge['runtime_symbols']),
             'runtime_sessions': sorted(edge['runtime_sessions']),
         }
         for edge in sorted(dynamic_edge_map.values(), key=lambda item: (item['source'], item['target']))
@@ -1184,6 +1406,7 @@ def merge_runtime_traces(
             'local_edge_count': len(merged['dynamic_edges']),
             'local_file_access_hits': total_file_access_hits,
             'local_file_access_count': len(runtime_file_accesses),
+            'symbol_binding_count': total_symbol_binding_hits,
         },
         'timed_out': aggregate_timed_out,
         'elapsed_s': round(total_elapsed, 3),
@@ -1209,6 +1432,7 @@ def merge_runtime_traces(
         'runtime_edges': len(merged['dynamic_edges']),
         'dynamic_edges': len(aggregate_dynamic_pairs),
         'file_accesses': len(runtime_file_accesses),
+        'symbol_binding_count': total_symbol_binding_hits,
         'timed_out': aggregate_timed_out,
         'exit_code': latest.get('exit_code', 0),
         'stale': aggregate_stale,

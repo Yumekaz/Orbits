@@ -140,6 +140,7 @@ Implemented now:
 
 - Python runtime tracing in a separate subprocess
 - Node.js runtime tracing in a separate subprocess
+- scoped C / C++ runtime tracing for local native binaries and libraries
 - separate `runtime_trace.json` artifact
 - merged runtime edge overlay in `graph.json` via `dynamic_edges`
 - multi-session runtime metadata via `meta.runtime.sessions[]`
@@ -149,13 +150,14 @@ Implemented now:
 
 Current scope and honest boundary:
 
-- runtime tracing is shipped for Python and Node.js today
+- runtime tracing is shipped for Python, Node.js, and scoped C / C++ overlays today
 - multiple runtime artifacts can be merged into one graph as separate runtime sessions
 - static graph metrics like cycles, depth, waste, and health remain static-analysis-based
 - runtime edges are an overlay, not a replacement for the static graph
 - reanalysis preserves prior runtime overlay, but marks it stale after source-changing actions until you retrace
 - Node traces are best for `.js` / `.cjs` / `.mjs` entrypoints; direct TypeScript runtime execution is still not claimed
-- runtime-to-static remapping for transpiled `dist/*.js` to `src/*.ts` now uses source maps when available, but is still not compiler-perfect
+- runtime-to-static remapping for transpiled `dist/*.js` to `src/*.ts` now uses source maps, inline maps, custom `sourceMappingURL` files, and common bundler path forms when available, but is still not compiler-perfect
+- C / C++ tracing is still intentionally scoped: Linux now captures loader edges plus local symbol bindings, macOS stays loader-oriented, and Windows native tracing is still not claimed
 
 ## Performance Reality
 
@@ -218,6 +220,14 @@ You can also merge existing runtime artifacts back into a fresh static analysis:
 ```bash
 python analyzer.py /path/to/project --runtime-input C:/tmp/python_runtime.json --runtime-input C:/tmp/node_runtime.json
 ```
+
+Scoped native tracing is also available for local C / C++ binaries on supported platforms:
+
+```bash
+python analyzer.py /path/to/project --trace-cpp build/my_binary
+```
+
+On Linux this captures local loader edges and symbol bindings via loader diagnostics. On macOS it captures local loader edges. Windows native tracing is still intentionally out of scope.
 
 ### Frontend
 

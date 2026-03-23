@@ -3,10 +3,33 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from runtime_trace import CppRuntimeTraceConfig, merge_runtime_traces, run_cpp_runtime_trace
+from runtime_trace import (
+    CppRuntimeTraceConfig,
+    _parse_linux_loader_edges,
+    merge_runtime_traces,
+    run_cpp_runtime_trace,
+)
 
 
 class CppRuntimeTraceTests(unittest.TestCase):
+    def test_linux_loader_parser_captures_symbol_bindings(self):
+        root = Path('/repo')
+        stderr = """
+            3400: calling init: /repo/plugins/libfilter.so
+            3400: binding file /repo/bin/demo [0] to /repo/plugins/libfilter.so [0]: normal symbol `plugin_init'
+            3400: binding file /repo/plugins/libfilter.so [0] to /repo/plugins/libmath.so [0]: normal symbol `transform'
+            3400: binding file /usr/lib/libc.so.6 [0] to /repo/plugins/libfilter.so [0]: normal symbol `puts'
+        """
+
+        edges = _parse_linux_loader_edges(stderr, root, 'bin/demo')
+        edge_map = {(edge['source'], edge['target']): edge for edge in edges}
+
+        self.assertIn(('bin/demo', 'plugins/libfilter.so'), edge_map)
+        self.assertIn(('plugins/libfilter.so', 'plugins/libmath.so'), edge_map)
+        self.assertEqual(edge_map[('bin/demo', 'plugins/libfilter.so')]['type'], 'runtime_bind')
+        self.assertIn('plugin_init', edge_map[('bin/demo', 'plugins/libfilter.so')]['runtime_symbols'])
+        self.assertIn('transform', edge_map[('plugins/libfilter.so', 'plugins/libmath.so')]['runtime_symbols'])
+
     def test_merge_runtime_traces_adds_cpp_runtime_only_nodes(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -33,7 +56,7 @@ class CppRuntimeTraceTests(unittest.TestCase):
                 'exit_code': 0,
                 'error': None,
                 'file_accesses': [],
-                'edges': [{'source': str(exe), 'target': str(dll), 'line': -1, 'language': 'cpp', 'runtime_hits': 1, 'runtime_modules': ['plugins/filter.dll'], 'runtime_lines': []}],
+                'edges': [{'source': str(exe), 'target': str(dll), 'line': -1, 'language': 'cpp', 'runtime_hits': 1, 'runtime_modules': ['plugins/filter.dll'], 'runtime_lines': [], 'runtime_symbols': ['plugin_init'], 'runtime_symbol_hits': 1}],
             }
 
             merged = merge_runtime_traces(static_graph, [(trace, root / 'runtime_trace.json', False)])
@@ -44,6 +67,7 @@ class CppRuntimeTraceTests(unittest.TestCase):
             dynamic_pairs = {(edge['source'], edge['target']) for edge in merged['dynamic_edges']}
             self.assertIn(('bin/demo.exe', 'plugins/filter.dll'), dynamic_pairs)
             self.assertEqual(merged['meta']['runtime']['language'], 'cpp')
+            self.assertEqual(merged['meta']['runtime']['symbol_binding_count'], 1)
 
     @unittest.skipUnless(os.name == 'nt', 'Windows-specific unsupported-path regression')
     def test_cpp_runtime_trace_is_explicitly_unsupported_on_windows(self):
