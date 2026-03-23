@@ -302,6 +302,33 @@ class NodeRuntimeTraceContractTests(unittest.TestCase):
             self.assertIn(('src/server.ts', 'src/dynamic.ts'), dynamic_pairs)
             self.assertEqual(merged['meta']['runtime']['dynamic_edges'], 1)
 
+    def test_nested_build_prefix_remap_maps_package_dist_js_back_to_src_ts(self):
+        static_graph = {
+            'nodes': [
+                {'id': 'packages/shared/src/index.ts', 'filepath': 'packages/shared/src/index.ts', 'name': 'index.ts', 'dir': 'packages/shared/src', 'classification': 'ENTRY', 'language': 'typescript', 'size': 10, 'mtime': 1, 'depth': 0, 'island_id': -1},
+                {'id': 'packages/shared/src/runtime.ts', 'filepath': 'packages/shared/src/runtime.ts', 'name': 'runtime.ts', 'dir': 'packages/shared/src', 'classification': 'LEAF', 'language': 'typescript', 'size': 10, 'mtime': 1, 'depth': 1, 'island_id': -1},
+            ],
+            'edges': [],
+            'meta': {'root': 'C:/repo', 'languages': ['typescript'], 'import_stats': {'local': 0, 'stdlib': 0, 'external': 0, 'unknown': 0}, 'unsupported_languages': []},
+            'summary': {'counts': {'ENTRY': 1, 'LEAF': 1}, 'total': 2, 'cycle_count': 0, 'island_count': 0, 'max_depth': 1, 'health_score': 100, 'unreachable': 0},
+        }
+        trace = {
+            'language': 'nodejs',
+            'engine': 'node',
+            'entry': {'mode': 'script', 'target': 'packages/shared/dist/index.js', 'args': []},
+            'summary': {'local_edge_count': 1, 'local_edge_hits': 1, 'local_file_access_count': 0, 'local_file_access_hits': 0},
+            'timed_out': False,
+            'elapsed_s': 0.1,
+            'exit_code': 0,
+            'error': None,
+            'file_accesses': [],
+            'edges': [{'source': 'packages/shared/dist/index.js', 'target': 'packages/shared/dist/runtime.js', 'line': 5, 'language': 'javascript', 'runtime_hits': 1, 'runtime_modules': ['./runtime.js'], 'runtime_lines': [5]}],
+        }
+
+        merged = merge_runtime_traces(static_graph, [(trace, Path('C:/tmp/runtime_trace.json'), False)])
+        dynamic_pairs = {(edge['source'], edge['target']) for edge in merged['dynamic_edges']}
+        self.assertIn(('packages/shared/src/index.ts', 'packages/shared/src/runtime.ts'), dynamic_pairs)
+
     def test_analyzer_run_merges_multiple_runtime_inputs(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)

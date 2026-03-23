@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import builtins
 import importlib
 import importlib.util
@@ -8,6 +9,7 @@ import inspect
 import io
 import json
 import os
+import re
 import runpy
 import shutil
 import subprocess
@@ -20,6 +22,8 @@ from types import ModuleType
 from typing import Any
 from urllib.parse import urlparse
 from urllib.request import url2pathname
+
+from path_utils import relative_to_root
 
 
 @dataclass
@@ -39,6 +43,14 @@ class NodeRuntimeTraceConfig:
     output_path: Path | None = None
     timeout_s: int = 60
     node_bin: str = 'node'
+
+
+@dataclass
+class CppRuntimeTraceConfig:
+    target: str
+    args: list[str] = field(default_factory=list)
+    output_path: Path | None = None
+    timeout_s: int = 60
 
 
 class RuntimeTraceCollector:
@@ -90,11 +102,7 @@ class RuntimeTraceCollector:
             path = path.resolve()
         if path.suffix in {'.pyc', '.pyo'} and path.with_suffix('.py').exists():
             path = path.with_suffix('.py')
-        try:
-            rel = path.relative_to(self.root)
-        except ValueError:
-            return None
-        return str(rel).replace('\\', '/')
+        return relative_to_root(path, self.root)
 
     def _caller_context(self, globals_dict: dict[str, Any] | None = None) -> tuple[str | None, int | None]:
         preferred_file = None
@@ -525,6 +533,192 @@ def _patch_timed_out_payload(payload: dict[str, Any], output_path: Path, timeout
     return payload
 
 
+def _native_project_rel(raw_id: str, root: Path | None) -> str | None:
+    normalized = str(raw_id or '').replace('\\', '/').lstrip('./')
+    if not normalized:
+        return None
+    if root is not None:
+        rel = relative_to_root(normalized, root)
+        if rel:
+            return rel
+    candidate = PurePosixPath(normalized)
+    if candidate.parts and candidate.parts[0] != '..':
+        return str(candidate)
+    return None
+
+
+def _build_cpp_runtime_payload(
+    root: Path,
+    target: str,
+    args: list[str],
+    timeout_s: int,
+    engine: str,
+    edges: list[dict[str, Any]],
+    elapsed_s: float,
+    exit_code: int,
+    timed_out: bool,
+    error: str | None = None,
+) -> dict[str, Any]:
+    return {
+        'version': 1,
+        'language': 'cpp',
+        'engine': engine,
+        'root': str(root),
+        'entry': {
+            'mode': 'binary',
+            'target': target,
+            'args': list(args),
+        },
+        'timeout_s': timeout_s,
+        'timed_out': timed_out,
+        'elapsed_s': round(elapsed_s, 3),
+        'exit_code': exit_code,
+        'error': error,
+        'edges': edges,
+        'file_accesses': [],
+        'summary': {
+            'import_calls': len(edges),
+            'external_import_calls': 0,
+            'local_edge_hits': sum(int(edge.get('runtime_hits', 0) or 0) for edge in edges),
+            'local_edge_count': len(edges),
+            'local_file_access_hits': 0,
+            'local_file_access_count': 0,
+        },
+    }
+
+
+def _parse_linux_loader_edges(stderr: str, root: Path, entry_rel: str) -> list[dict[str, Any]]:
+    hits: dict[str, int] = {}
+    for line in (stderr or '').splitlines():
+        match = re.search(r'calling init:\s*(.+)$', line)
+        if not match:
+            continue
+        rel = relative_to_root(match.group(1).strip(), root)
+        if not rel or rel == entry_rel or Path(rel).suffix.lower() not in _CPP_RUNTIME_EXTENSIONS:
+            continue
+        hits[rel] = hits.get(rel, 0) + 1
+    return [
+        {
+            'source': entry_rel,
+            'target': target,
+            'type': 'runtime_load',
+            'line': -1,
+            'language': 'cpp',
+            'runtime': True,
+            'origins': ['runtime'],
+            'dynamic': True,
+            'runtime_hits': count,
+            'runtime_modules': [target],
+            'runtime_lines': [],
+        }
+        for target, count in sorted(hits.items())
+    ]
+
+
+def _parse_macos_loader_edges(stderr: str, root: Path, entry_rel: str) -> list[dict[str, Any]]:
+    hits: dict[str, int] = {}
+    for line in (stderr or '').splitlines():
+        match = re.search(r'loaded:\s*(.+)$', line)
+        if not match:
+            continue
+        rel = relative_to_root(match.group(1).strip(), root)
+        if not rel or rel == entry_rel or Path(rel).suffix.lower() not in _CPP_RUNTIME_EXTENSIONS:
+            continue
+        hits[rel] = hits.get(rel, 0) + 1
+    return [
+        {
+            'source': entry_rel,
+            'target': target,
+            'type': 'runtime_load',
+            'line': -1,
+            'language': 'cpp',
+            'runtime': True,
+            'origins': ['runtime'],
+            'dynamic': True,
+            'runtime_hits': count,
+            'runtime_modules': [target],
+            'runtime_lines': [],
+        }
+        for target, count in sorted(hits.items())
+    ]
+
+
+def run_cpp_runtime_trace(root: Path, config: CppRuntimeTraceConfig, verbose: bool = True) -> dict[str, Any]:
+    if os.name == 'nt':
+        raise RuntimeError('C/C++ runtime tracing is not supported on Windows yet; use Linux or macOS loader tracing')
+    executable = Path(config.target)
+    if not executable.is_absolute():
+        executable = (root / executable).resolve()
+    else:
+        executable = executable.resolve()
+    if not executable.exists():
+        raise FileNotFoundError(f'C/C++ trace entry binary not found: {executable}')
+    entry_rel = relative_to_root(executable, root.resolve())
+    if not entry_rel:
+        raise RuntimeError('C/C++ trace entry must live under the analyzed project root')
+
+    output_path = (config.output_path or (root / 'runtime_trace.json')).resolve()
+    env = os.environ.copy()
+    engine = ''
+    if sys.platform.startswith('linux'):
+        env['LD_DEBUG'] = 'libs'
+        env.setdefault('LD_BIND_NOW', '1')
+        engine = 'ld_debug'
+    elif sys.platform == 'darwin':
+        env['DYLD_PRINT_LIBRARIES'] = '1'
+        engine = 'dyld'
+    else:
+        raise RuntimeError(f'C/C++ runtime tracing is not supported on platform: {sys.platform}')
+
+    start = time.time()
+    command = [str(executable), *list(config.args or [])]
+    try:
+        proc = subprocess.run(
+            command,
+            cwd=str(root.resolve()),
+            capture_output=True,
+            text=True,
+            timeout=max(5, int(config.timeout_s) + 5),
+            env=env,
+        )
+        stderr = proc.stderr or ''
+        exit_code = proc.returncode
+        timed_out = False
+        error = stderr.strip().splitlines()[-1] if proc.returncode and stderr.strip() else None
+    except subprocess.TimeoutExpired as exc:
+        stderr = ((exc.stderr.decode('utf-8', errors='replace') if isinstance(exc.stderr, bytes) else exc.stderr) or '')
+        exit_code = 124
+        timed_out = True
+        error = f'Runtime trace timed out after {config.timeout_s}s'
+
+    edges = _parse_linux_loader_edges(stderr, root.resolve(), entry_rel) if engine == 'ld_debug' else _parse_macos_loader_edges(stderr, root.resolve(), entry_rel)
+    payload = _build_cpp_runtime_payload(
+        root.resolve(),
+        config.target,
+        list(config.args or []),
+        int(config.timeout_s),
+        engine,
+        edges,
+        time.time() - start,
+        exit_code,
+        timed_out=timed_out,
+        error=error,
+    )
+    _write_json(output_path, payload)
+    payload.setdefault('subprocess_exit_code', exit_code)
+    if verbose:
+        print(
+            f"  Runtime:   {payload['summary'].get('local_edge_count', 0)} dynamic loads, "
+            f"0 file accesses, exit {payload.get('exit_code', exit_code)}",
+            file=sys.stderr,
+        )
+        if payload.get('timed_out'):
+            print(f"  Runtime:   timed out after {config.timeout_s}s; partial trace kept", file=sys.stderr)
+        elif payload.get('error'):
+            print(f"  Runtime:   trace error recorded: {payload['error']}", file=sys.stderr)
+    return payload
+
+
 def run_node_runtime_trace(root: Path, config: NodeRuntimeTraceConfig, verbose: bool = True) -> dict[str, Any]:
     output_path = (config.output_path or (root / 'runtime_trace.json')).resolve()
     node_bin = config.node_bin or os.environ.get('ORBITS_NODE_BIN', 'node')
@@ -609,7 +803,9 @@ def run_node_runtime_trace(root: Path, config: NodeRuntimeTraceConfig, verbose: 
     return payload
 
 
-def run_runtime_trace(root: Path, config: PythonRuntimeTraceConfig | NodeRuntimeTraceConfig, verbose: bool = True) -> dict[str, Any]:
+def run_runtime_trace(root: Path, config: PythonRuntimeTraceConfig | NodeRuntimeTraceConfig | CppRuntimeTraceConfig, verbose: bool = True) -> dict[str, Any]:
+    if isinstance(config, CppRuntimeTraceConfig):
+        return run_cpp_runtime_trace(root, config, verbose=verbose)
     if isinstance(config, NodeRuntimeTraceConfig):
         return run_node_runtime_trace(root, config, verbose=verbose)
     return run_python_runtime_trace(root, config, verbose=verbose)
@@ -617,6 +813,8 @@ def run_runtime_trace(root: Path, config: PythonRuntimeTraceConfig | NodeRuntime
 
 _NODE_RUNTIME_ALT_EXTENSIONS = ('.ts', '.tsx', '.mts', '.cts', '.jsx', '.js', '.mjs', '.cjs')
 _NODE_RUNTIME_BUILD_PREFIXES = ('dist', 'build', 'out', 'lib')
+_NODE_RUNTIME_SOURCE_EXTENSIONS = {'.ts', '.tsx', '.mts', '.cts', '.jsx', '.js', '.mjs', '.cjs'}
+_CPP_RUNTIME_EXTENSIONS = {'.so', '.dylib', '.dll', '.exe'}
 
 
 def _candidate_node_runtime_ids(raw_id: str) -> list[str]:
@@ -649,11 +847,80 @@ def _candidate_node_runtime_ids(raw_id: str) -> list[str]:
             for ext in _NODE_RUNTIME_ALT_EXTENSIONS:
                 rel = f'{rest.stem}{ext}' if not rest_parent else f'{rest_parent}/{rest.stem}{ext}'
                 add(f'{prefix}/{rel}' if prefix else rel)
+    for index, part in enumerate(parts):
+        if part not in _NODE_RUNTIME_BUILD_PREFIXES or index == 0 or index == len(parts) - 1:
+            continue
+        prefix_parts = parts[:index]
+        rest = PurePosixPath(*parts[index + 1:])
+        rest_parent = '' if str(rest.parent) == '.' else str(rest.parent)
+        for source_dir in ('src', ''):
+            for ext in _NODE_RUNTIME_ALT_EXTENSIONS:
+                leaf = f'{rest.stem}{ext}' if not rest_parent else f'{rest_parent}/{rest.stem}{ext}'
+                candidate_parts = list(prefix_parts)
+                if source_dir:
+                    candidate_parts.append(source_dir)
+                if leaf:
+                    candidate_parts.append(leaf)
+                add('/'.join(candidate_parts))
     return candidates
 
 
 def _map_runtime_node_id(raw_id: str, node_ids: set[str], trace_language: str) -> str | None:
     return _map_runtime_node_id_with_root(raw_id, node_ids, trace_language, None)
+
+
+def _extract_source_mapping_url(source_path: Path) -> str | None:
+    try:
+        text = source_path.read_text(encoding='utf-8', errors='replace')
+    except Exception:
+        return None
+    matches = re.findall(r'[#@]\s*sourceMappingURL\s*=\s*([^\s*]+)', text)
+    return matches[-1].strip() if matches else None
+
+
+def _decode_inline_source_map(url: str) -> dict[str, Any] | None:
+    if not url.startswith('data:application/json;base64,'):
+        return None
+    try:
+        encoded = url.split(',', 1)[1]
+        decoded = base64.b64decode(encoded)
+        return json.loads(decoded.decode('utf-8'))
+    except Exception:
+        return None
+
+
+def _load_source_map_payload(source_path: Path) -> tuple[dict[str, Any], Path | None] | tuple[None, None]:
+    inline = None
+    mapping_url = _extract_source_mapping_url(source_path)
+    if mapping_url:
+        inline = _decode_inline_source_map(mapping_url)
+        if inline is not None:
+            return inline, None
+        custom_map_path = (source_path.parent / mapping_url).resolve()
+        if custom_map_path.exists():
+            try:
+                return json.loads(custom_map_path.read_text(encoding='utf-8')), custom_map_path
+            except Exception:
+                return None, None
+    map_path = Path(f'{source_path}.map')
+    if not map_path.exists():
+        return None, None
+    try:
+        return json.loads(map_path.read_text(encoding='utf-8')), map_path
+    except Exception:
+        return None, None
+
+
+def _iter_source_map_sources(payload: dict[str, Any]) -> list[str]:
+    sources = [source for source in payload.get('sources', []) if isinstance(source, str)]
+    sections = payload.get('sections', [])
+    for section in sections if isinstance(sections, list) else []:
+        if not isinstance(section, dict):
+            continue
+        nested = section.get('map')
+        if isinstance(nested, dict):
+            sources.extend(_iter_source_map_sources(nested))
+    return sources
 
 
 def _source_map_candidates(raw_id: str, root: Path | None) -> list[str]:
@@ -665,12 +932,8 @@ def _source_map_candidates(raw_id: str, root: Path | None) -> list[str]:
         return []
 
     source_path = (root / Path(normalized)).resolve()
-    map_path = Path(f'{source_path}.map')
-    if not map_path.exists():
-        return []
-    try:
-        payload = json.loads(map_path.read_text(encoding='utf-8'))
-    except Exception:
+    payload, map_path = _load_source_map_payload(source_path)
+    if not payload:
         return []
 
     source_root = payload.get('sourceRoot', '')
@@ -678,16 +941,15 @@ def _source_map_candidates(raw_id: str, root: Path | None) -> list[str]:
     candidates: list[str] = []
 
     def add_candidate(candidate_path: Path) -> None:
-        try:
-            rel = candidate_path.resolve().relative_to(root.resolve())
-        except Exception:
+        rel_str = relative_to_root(candidate_path.resolve(), root.resolve())
+        if not rel_str:
             return
-        rel_str = str(rel).replace('\\', '/')
         if rel_str not in seen:
             seen.add(rel_str)
             candidates.append(rel_str)
 
-    for source in payload.get('sources', []):
+    map_parent = map_path.parent if map_path is not None else source_path.parent
+    for source in _iter_source_map_sources(payload):
         if not isinstance(source, str) or not source or source.startswith(('webpack://', 'node:')):
             continue
         try:
@@ -695,7 +957,7 @@ def _source_map_candidates(raw_id: str, root: Path | None) -> list[str]:
                 parsed = urlparse(source)
                 candidate = Path(url2pathname(parsed.path))
             else:
-                base = map_path.parent
+                base = map_parent
                 if source_root:
                     base = (base / source_root).resolve()
                 candidate = (base / source).resolve()
@@ -711,6 +973,10 @@ def _map_runtime_node_id_with_root(raw_id: str, node_ids: set[str], trace_langua
         return None
     if normalized in node_ids:
         return normalized
+    if trace_language == 'cpp':
+        rel = _native_project_rel(normalized, root)
+        if rel:
+            return rel
     if trace_language != 'nodejs':
         return None
     for candidate in _source_map_candidates(normalized, root):
@@ -720,6 +986,36 @@ def _map_runtime_node_id_with_root(raw_id: str, node_ids: set[str], trace_langua
         if candidate in node_ids:
             return candidate
     return None
+
+
+def _ensure_runtime_node(
+    merged: dict[str, Any],
+    node_ids: set[str],
+    rel_id: str,
+    runtime_language: str,
+    root: Path | None,
+) -> None:
+    if not rel_id or rel_id in node_ids:
+        return
+    disk_path = (root / rel_id).resolve() if root is not None else None
+    stat = None
+    if disk_path is not None and disk_path.exists():
+        try:
+            stat = disk_path.stat()
+        except OSError:
+            stat = None
+    rel_path = PurePosixPath(rel_id)
+    merged['nodes'].append({
+        'id': rel_id,
+        'filepath': rel_id,
+        'name': rel_path.name,
+        'language': runtime_language,
+        'size': stat.st_size if stat else 0,
+        'mtime': round(stat.st_mtime) if stat else 0,
+        'dir': str(rel_path.parent) if str(rel_path.parent) != '.' else '.',
+        'runtime_only': True,
+    })
+    node_ids.add(rel_id)
 
 
 def _normalize_runtime_overlay_item(item: tuple[dict, Path] | tuple[dict, Path, bool]) -> tuple[dict[str, Any], Path, bool]:
@@ -782,6 +1078,11 @@ def merge_runtime_traces(
         session_pairs: set[tuple[str, str]] = set()
         session_dynamic_pairs: set[tuple[str, str]] = set()
         for item in trace.get('edges', []):
+            if trace_language == 'cpp':
+                for raw_path in (item.get('source', ''), item.get('target', '')):
+                    rel = _native_project_rel(raw_path, root_path)
+                    if rel:
+                        _ensure_runtime_node(merged, node_ids, rel, trace_language, root_path)
             source = _map_runtime_node_id_with_root(item.get('source', ''), node_ids, trace_language, root_path)
             target = _map_runtime_node_id_with_root(item.get('target', ''), node_ids, trace_language, root_path)
             if not source or not target or source == target:

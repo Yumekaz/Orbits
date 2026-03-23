@@ -26,6 +26,7 @@ from urllib.parse import parse_qs, urlparse
 from graph_engine import analyze_graph
 from lang_dispatch import extract_all
 from runtime_trace import (
+    CppRuntimeTraceConfig,
     NodeRuntimeTraceConfig,
     PythonRuntimeTraceConfig,
     merge_runtime_traces,
@@ -343,7 +344,7 @@ def make_server_handler(visualizer_path: Path, graph_path: Path):
 def run(
     root: str | Path,
     verbose: bool = True,
-    runtime_trace: PythonRuntimeTraceConfig | NodeRuntimeTraceConfig | None = None,
+    runtime_trace: PythonRuntimeTraceConfig | NodeRuntimeTraceConfig | CppRuntimeTraceConfig | None = None,
     runtime_overlays: list[tuple[dict, Path] | tuple[dict, Path, bool]] | None = None,
     runtime_stale: bool = False,
 ) -> dict:
@@ -431,7 +432,7 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Supports: Python, JavaScript, TypeScript, Go + generic fallback
-Phase 5: optional Python and Node.js runtime tracing
+Phase 5: optional Python, Node.js, and scoped C/C++ runtime tracing
 
 Examples:
   python analyzer.py .
@@ -446,6 +447,7 @@ Examples:
     trace_group.add_argument('--trace-module', help='Python module to execute under runtime tracing')
     trace_group.add_argument('--trace-node', help='Project-relative Node.js entry script to execute under runtime tracing')
     trace_group.add_argument('--trace-node-module', help='Node.js module specifier to execute under runtime tracing')
+    trace_group.add_argument('--trace-cpp', help='Project-relative native executable to execute under runtime tracing (Linux/macOS only)')
     parser.add_argument('--trace-arg', action='append', default=[], help='Repeatable argument passed to the traced runtime entry or module')
     parser.add_argument('--trace-timeout', type=int, default=60, help='Maximum seconds to allow traced runtime execution before cutting it off')
     parser.add_argument('--runtime-output', default='runtime_trace.json', help='Path for the runtime trace artifact when tracing is enabled')
@@ -475,6 +477,13 @@ Examples:
             output_path=Path(args.runtime_output).resolve(),
             timeout_s=args.trace_timeout,
             node_bin=args.node_bin,
+        )
+    elif args.trace_cpp:
+        runtime_trace = CppRuntimeTraceConfig(
+            target=args.trace_cpp,
+            args=list(args.trace_arg or []),
+            output_path=Path(args.runtime_output).resolve(),
+            timeout_s=args.trace_timeout,
         )
 
     runtime_overlays = []
