@@ -138,3 +138,7 @@ export async function openMenu(page: Page, testId: string): Promise<void> {
   await page.getByTestId(testId).click();
 }
 
+export async function settleVisualFrame(page: Page, delayMs = 700): Promise<void> {
+  await page.waitForTimeout(delayMs);
+}
+
