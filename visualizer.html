@@ -478,6 +478,16 @@
       border-left: 3px solid var(--amber)
     }
 
+    .chip.runtime {
+      border-left-color: #ff94d4;
+      color: #ffd1eb
+    }
+
+    .chip.both {
+      border-left-color: #7cf7cf;
+      color: #c9fff0
+    }
+
     /* ── Graph & Canvas ────────────────────────────────────── */
     #canvas-wrap {
       flex: 1;
@@ -637,6 +647,14 @@
       border-color: var(--cyan);
       color: var(--cyan);
       background: rgba(0, 229, 255, .08)
+    }
+
+    .mini-btn:disabled {
+      opacity: .45;
+      cursor: not-allowed;
+      border-color: var(--border);
+      color: var(--dim);
+      background: rgba(255, 255, 255, .02)
     }
 
     #lang-menu,
@@ -1091,6 +1109,12 @@
           <div class="lr" style="display:flex;align-items:center;gap:10px;font-size:11px;color:var(--text);opacity:0.8">
             <div class="item-dot" style="background:var(--purple);margin-top:0"></div>Isolated cluster
           </div>
+          <div class="lr" style="display:flex;align-items:center;gap:10px;font-size:11px;color:var(--text);opacity:0.8">
+            <div style="width:16px;height:0;border-top:2px dashed #ff94d4"></div>Runtime-only edge
+          </div>
+          <div class="lr" style="display:flex;align-items:center;gap:10px;font-size:11px;color:var(--text);opacity:0.8">
+            <div style="width:16px;height:0;border-top:2px solid #7cf7cf"></div>Static + runtime edge
+          </div>
         </div>
       </div>
     </div>
@@ -1104,6 +1128,10 @@
   </div>
   <div id="layout-menu">
     <div class="menu-title">View Controls</div>
+    <div class="menu-block">
+      <div class="menu-subtitle">Edge Source</div>
+      <div class="menu-actions"><button class="mini-btn on" id="edge-mode-static">static</button><button class="mini-btn" id="edge-mode-runtime">runtime</button><button class="mini-btn" id="edge-mode-combined">combined</button></div>
+    </div>
     <div class="menu-block">
       <div class="menu-subtitle">Layout</div>
       <div class="menu-actions"><button class="mini-btn on" id="layout-force">force</button><button class="mini-btn"

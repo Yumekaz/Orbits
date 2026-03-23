@@ -2,7 +2,8 @@
 analyzer.py - Orbits Phase 3
 
 Multi-language dependency graph analyzer.
-Supports: Python, JavaScript, TypeScript, Go + generic fallback.
+Supports: Python, JavaScript, TypeScript, Go + generic fallback
+Phase 5: optional Python runtime tracing.
 
 Usage:
     python analyzer.py /path/to/project --serve
@@ -24,6 +25,7 @@ from urllib.parse import parse_qs, urlparse
 
 from graph_engine import analyze_graph
 from lang_dispatch import extract_all
+from runtime_trace import PythonRuntimeTraceConfig, merge_runtime_trace, run_python_runtime_trace
 
 
 def _load_graph_payload(graph_path: Path) -> dict:
@@ -63,6 +65,21 @@ def _save_intentional_state(root: Path, state: dict) -> None:
     _intentional_file_path(root).write_text(json.dumps(state, indent=2), encoding='utf-8')
 
 
+def _load_runtime_overlay(payload: dict) -> tuple[dict, Path] | None:
+    runtime_meta = payload.get('meta', {}).get('runtime', {}) if isinstance(payload, dict) else {}
+    artifact = runtime_meta.get('artifact')
+    if not artifact:
+        return None
+    artifact_path = Path(artifact)
+    if not artifact_path.exists():
+        return None
+    try:
+        trace = json.loads(artifact_path.read_text(encoding='utf-8'))
+    except Exception:
+        return None
+    return trace, artifact_path.resolve()
+
+
 def _blame_summary(root: Path, relpath: str) -> dict:
     git_dir = root / '.git'
     if not git_dir.exists():
@@ -99,11 +116,13 @@ def _blame_summary(root: Path, relpath: str) -> dict:
     return {'available': True, 'summary': summary, 'commit_count': len(commits)}
 
 
-def _rerun_graph(graph_path: Path) -> dict:
+def _rerun_graph(graph_path: Path, runtime_stale: bool = False) -> dict:
+    previous = _load_graph_payload(graph_path)
     root = _graph_root_from_file(graph_path)
     if not root:
         raise FileNotFoundError('Graph root unavailable for re-analysis')
-    refreshed = run(root, verbose=False)
+    overlay = _load_runtime_overlay(previous)
+    refreshed = run(root, verbose=False, runtime_overlay=overlay, runtime_stale=runtime_stale and overlay is not None)
     graph_path.write_text(json.dumps(refreshed, indent=2, ensure_ascii=False), encoding='utf-8')
     return refreshed
 
@@ -207,7 +226,7 @@ class _GraphRequestHandler(http.server.BaseHTTPRequestHandler):
         if target.is_dir():
             raise IsADirectoryError(relpath)
         target.unlink()
-        graph = _rerun_graph(self.graph_path)
+        graph = _rerun_graph(self.graph_path, runtime_stale=True)
         self._send_json({'ok': True, 'graph': graph})
 
     def _handle_mark_intentional(self, payload: dict):
@@ -224,11 +243,11 @@ class _GraphRequestHandler(http.server.BaseHTTPRequestHandler):
             files.discard(relpath)
         state['intentional_files'] = sorted(files)
         _save_intentional_state(root, state)
-        graph = _rerun_graph(self.graph_path)
+        graph = _rerun_graph(self.graph_path, runtime_stale=False)
         self._send_json({'ok': True, 'graph': graph, 'intentional': intentional})
 
     def _handle_reanalyze(self):
-        graph = _rerun_graph(self.graph_path)
+        graph = _rerun_graph(self.graph_path, runtime_stale=True)
         self._send_json({'ok': True, 'graph': graph})
 
     def _resolve_route(self) -> tuple[Path | None, str]:
@@ -289,7 +308,13 @@ def make_server_handler(visualizer_path: Path, graph_path: Path):
     return Handler
 
 
-def run(root: str | Path, verbose: bool = True) -> dict:
+def run(
+    root: str | Path,
+    verbose: bool = True,
+    runtime_trace: PythonRuntimeTraceConfig | None = None,
+    runtime_overlay: tuple[dict, Path] | None = None,
+    runtime_stale: bool = False,
+) -> dict:
     root_path = Path(root).resolve()
 
     if not root_path.exists():
@@ -300,6 +325,15 @@ def run(root: str | Path, verbose: bool = True) -> dict:
         sys.exit(1)
 
     raw = extract_all(root_path, verbose=verbose)
+
+    if runtime_trace is not None:
+        trace = run_python_runtime_trace(root_path, runtime_trace, verbose=verbose)
+        artifact_path = (runtime_trace.output_path or (root_path / 'runtime_trace.json')).resolve()
+        raw = merge_runtime_trace(raw, trace, artifact_path, stale=False)
+    elif runtime_overlay is not None:
+        trace, artifact_path = runtime_overlay
+        raw = merge_runtime_trace(raw, trace, artifact_path, stale=runtime_stale)
+
     enriched = analyze_graph(raw)
 
     if verbose:
@@ -311,6 +345,20 @@ def run(root: str | Path, verbose: bool = True) -> dict:
         if unsupported:
             labels = ', '.join(item['language'] for item in unsupported)
             print(f"  Missing:   parser support unavailable for {labels}", file=sys.stderr)
+        runtime_meta = meta.get('runtime', {})
+        if runtime_meta.get('enabled'):
+            print(
+                f"  Runtime:   {runtime_meta.get('runtime_edges', 0)} observed edges  "
+                f"Dynamic:{runtime_meta.get('dynamic_edges', 0)}  "
+                f"Exit:{runtime_meta.get('exit_code', 0)}",
+                file=sys.stderr,
+            )
+            if runtime_meta.get('timed_out'):
+                print('  Runtime:   trace timed out; partial results kept', file=sys.stderr)
+            if runtime_meta.get('stale'):
+                print('  Runtime:   preserved runtime overlay is stale after source changes', file=sys.stderr)
+            if runtime_meta.get('error'):
+                print(f"  Runtime:   {runtime_meta.get('error')}", file=sys.stderr)
         print(
             f"  Health:    {summary['health_score']}/100  "
             f"Orphans:{summary['counts'].get('ORPHAN', 0)}  "
@@ -349,6 +397,7 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Supports: Python, JavaScript, TypeScript, Go + generic fallback
+Phase 5: optional Python runtime tracing
 
 Examples:
   python analyzer.py .
@@ -358,14 +407,30 @@ Examples:
     )
     parser.add_argument('path', help='Project root directory')
     parser.add_argument('-o', '--output', default='graph.json')
+    trace_group = parser.add_mutually_exclusive_group()
+    trace_group.add_argument('--trace-python', help='Project-relative Python entry script to execute under runtime tracing')
+    trace_group.add_argument('--trace-module', help='Python module to execute under runtime tracing')
+    parser.add_argument('--trace-arg', action='append', default=[], help='Repeatable argument passed to the traced Python entry or module')
+    parser.add_argument('--trace-timeout', type=int, default=60, help='Maximum seconds to allow traced Python execution before cutting it off')
+    parser.add_argument('--runtime-output', default='runtime_trace.json', help='Path for the runtime trace artifact when tracing is enabled')
     parser.add_argument('--serve', action='store_true', help='Open visualizer in browser after analysis')
     parser.add_argument('--port', type=int, default=8765)
     args = parser.parse_args()
 
-    print('\nOrbits - Phase 3', file=sys.stderr)
+    print('\nOrbits - Phase 5', file=sys.stderr)
     print(f"{'-' * 40}", file=sys.stderr)
 
-    graph = run(args.path, verbose=True)
+    runtime_trace = None
+    if args.trace_python or args.trace_module:
+        runtime_trace = PythonRuntimeTraceConfig(
+            mode='script' if args.trace_python else 'module',
+            target=args.trace_python or args.trace_module,
+            args=list(args.trace_arg or []),
+            output_path=Path(args.runtime_output).resolve(),
+            timeout_s=args.trace_timeout,
+        )
+
+    graph = run(args.path, verbose=True, runtime_trace=runtime_trace)
     output_path = Path(args.output).resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(graph, indent=2, ensure_ascii=False), encoding='utf-8')
@@ -381,6 +446,9 @@ Examples:
     if meta.get('unsupported_languages'):
         for item in meta['unsupported_languages']:
             print(f"  Warning:   {item['language']} parser unavailable ({item['reason']})", file=sys.stderr)
+    runtime_meta = meta.get('runtime', {})
+    if runtime_meta.get('enabled'):
+        print(f"  Runtime:   {runtime_meta.get('artifact')}", file=sys.stderr)
     print(f"  Output:    {output_path}", file=sys.stderr)
     print(f"{'-' * 40}\n", file=sys.stderr)
 

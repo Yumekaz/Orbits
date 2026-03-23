@@ -1,0 +1,161 @@
+{
+  "nodes": [
+    {
+      "id": "app/main.py",
+      "filepath": "app/main.py",
+      "name": "main.py",
+      "dir": "app",
+      "classification": "ENTRY",
+      "language": "python",
+      "size": 800,
+      "mtime": 1730000001,
+      "depth": 0,
+      "island_id": -1
+    },
+    {
+      "id": "lib/core.py",
+      "filepath": "lib/core.py",
+      "name": "core.py",
+      "dir": "lib",
+      "classification": "CONNECTED",
+      "language": "python",
+      "size": 620,
+      "mtime": 1730000002,
+      "depth": 1,
+      "island_id": -1
+    },
+    {
+      "id": "lib/util.py",
+      "filepath": "lib/util.py",
+      "name": "util.py",
+      "dir": "lib",
+      "classification": "LEAF",
+      "language": "python",
+      "size": 410,
+      "mtime": 1730000003,
+      "depth": 2,
+      "island_id": -1
+    },
+    {
+      "id": "plugins/dynamic.py",
+      "filepath": "plugins/dynamic.py",
+      "name": "dynamic.py",
+      "dir": "plugins",
+      "classification": "LEAF",
+      "language": "python",
+      "size": 250,
+      "mtime": 1730000006,
+      "depth": 2,
+      "island_id": -1
+    }
+  ],
+  "edges": [
+    {
+      "source": "app/main.py",
+      "target": "lib/core.py",
+      "line": 3,
+      "origins": ["static"]
+    },
+    {
+      "source": "lib/core.py",
+      "target": "lib/util.py",
+      "line": 12,
+      "origins": ["static"]
+    }
+  ],
+  "dynamic_edges": [
+    {
+      "source": "app/main.py",
+      "target": "lib/core.py",
+      "line": 4,
+      "origins": ["runtime"],
+      "dynamic": false,
+      "runtime_hits": 2,
+      "runtime_modules": ["lib.core"],
+      "runtime_lines": [4]
+    },
+    {
+      "source": "app/main.py",
+      "target": "plugins/dynamic.py",
+      "line": 8,
+      "origins": ["runtime"],
+      "dynamic": true,
+      "runtime_hits": 3,
+      "runtime_modules": ["plugins.dynamic"],
+      "runtime_lines": [8]
+    }
+  ],
+  "cycles": [],
+  "waste": [],
+  "summary": {
+    "counts": {
+      "ENTRY": 1,
+      "CONNECTED": 1,
+      "LEAF": 2
+    },
+    "total": 4,
+    "cycle_count": 0,
+    "island_count": 0,
+    "max_depth": 2,
+    "health_score": 96,
+    "unreachable": 0
+  },
+  "runtime": {
+    "entry": {
+      "mode": "script",
+      "target": "app/main.py",
+      "args": []
+    },
+    "summary": {
+      "local_edge_count": 2,
+      "local_edge_hits": 5,
+      "local_file_access_count": 1,
+      "local_file_access_hits": 1
+    },
+    "timed_out": false,
+    "elapsed_s": 0.44,
+    "exit_code": 0,
+    "error": null,
+    "file_accesses": [
+      {
+        "source": "app/main.py",
+        "path": "plugins/dynamic.py",
+        "count": 1,
+        "modes": ["r"],
+        "lines": [8],
+        "line": 8
+      }
+    ],
+    "artifact": "runtime_trace.json",
+    "stale": false
+  },
+  "meta": {
+    "elapsed_s": 0.24,
+    "languages": [
+      "python"
+    ],
+    "import_stats": {
+      "local": 2,
+      "stdlib": 1,
+      "external": 0,
+      "unknown": 0
+    },
+    "unsupported_languages": [],
+    "runtime": {
+      "enabled": true,
+      "language": "python",
+      "artifact": "runtime_trace.json",
+      "entrypoint": "app/main.py",
+      "entry_mode": "script",
+      "args": [],
+      "elapsed_s": 0.44,
+      "runtime_edges": 2,
+      "dynamic_edges": 1,
+      "file_accesses": 1,
+      "timed_out": false,
+      "exit_code": 0,
+      "stale": false,
+      "error": null
+    }
+  }
+}

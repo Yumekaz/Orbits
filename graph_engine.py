@@ -402,7 +402,7 @@ def analyze_graph(raw: dict) -> dict:
         w['id'],
     ))
 
-    return {
+    result = {
         'nodes':   enriched_nodes,
         'edges':   edges,
         'cycles':  cycles,
@@ -411,6 +411,11 @@ def analyze_graph(raw: dict) -> dict:
         'summary': summary,
         'meta':    {
             **meta,
-            'phase': raw.get('meta', {}).get('phase', 3),
+            'phase': 5 if raw.get('runtime') or meta.get('runtime', {}).get('enabled') else raw.get('meta', {}).get('phase', 3),
         },
     }
+    if 'dynamic_edges' in raw:
+        result['dynamic_edges'] = raw.get('dynamic_edges', [])
+    if 'runtime' in raw:
+        result['runtime'] = raw.get('runtime')
+    return result

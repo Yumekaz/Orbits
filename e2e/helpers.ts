@@ -6,9 +6,12 @@ export type DebugSnapshot = {
   graphLoaded: boolean;
   graphNodeCount: number;
   graphEdgeCount: number;
+  graphDynamicEdgeCount: number;
   selectedNodeId: string | null;
   visibleNodeCount: number;
   visibleEdgeCount: number;
+  visibleDynamicEdgeCount: number;
+  edgeMode: string;
   menuStates: {
     langOpen: boolean;
     filterOpen: boolean;
@@ -42,9 +45,12 @@ export async function getDebug(page: Page): Promise<DebugSnapshot> {
     graphLoaded: (window as any).__orbitsDebug.graphLoaded,
     graphNodeCount: (window as any).__orbitsDebug.graphNodeCount,
     graphEdgeCount: (window as any).__orbitsDebug.graphEdgeCount,
+    graphDynamicEdgeCount: (window as any).__orbitsDebug.graphDynamicEdgeCount,
     selectedNodeId: (window as any).__orbitsDebug.selectedNodeId,
     visibleNodeCount: (window as any).__orbitsDebug.visibleNodeCount,
     visibleEdgeCount: (window as any).__orbitsDebug.visibleEdgeCount,
+    visibleDynamicEdgeCount: (window as any).__orbitsDebug.visibleDynamicEdgeCount,
+    edgeMode: (window as any).__orbitsDebug.edgeMode,
     menuStates: (window as any).__orbitsDebug.menuStates,
     zoom: (window as any).__orbitsDebug.zoom,
     shellState: (window as any).__orbitsDebug.shellState,

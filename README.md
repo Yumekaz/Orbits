@@ -8,6 +8,7 @@ The current stack is:
 - D3 + canvas visualizer
 - browser-side worker analysis for folder loading in supported browsers
 - local HTTP serving through `analyzer.py --serve`
+- optional Python runtime tracing with merged dynamic-edge overlays
 
 ## Quick Start
 
@@ -77,8 +78,10 @@ Fallback:
 2. Extract raw import/include statements.
 3. Resolve local edges against project files.
 4. Build graph metadata and summary metrics.
-5. Write `graph.json`.
-6. Optionally serve the visualizer and graph assets.
+5. Optionally trace a Python entrypoint at runtime and write `runtime_trace.json`.
+6. Merge dynamic runtime edges into the served/exported graph overlay.
+7. Write `graph.json`.
+8. Optionally serve the visualizer and graph assets.
 
 ## Current Frontend Architecture
 
@@ -113,6 +116,24 @@ Implemented in the current UI:
 Not implemented as originally claimed in older docs:
 
 - Cytoscape.js / react-force-graph as the active renderer
+
+## Phase 5 Status
+
+Implemented now:
+
+- Python runtime tracing in a separate subprocess
+- separate `runtime_trace.json` artifact
+- merged runtime edge overlay in `graph.json` via `dynamic_edges`
+- runtime-aware `view` menu edge modes: `static`, `runtime`, `combined`
+- runtime edge styling in the D3 + canvas visualizer
+- stale runtime overlay preservation across static reanalysis paths
+
+Current scope and honest boundary:
+
+- runtime tracing is Python-only today
+- static graph metrics like cycles, depth, waste, and health remain static-analysis-based
+- runtime edges are an overlay, not a replacement for the static graph
+- reanalysis preserves prior runtime overlay, but marks it stale after source-changing actions until you retrace
 
 ## Performance Reality
 
@@ -185,6 +206,24 @@ Analyze and serve the visualizer:
 python analyzer.py /path/to/project --serve
 ```
 
+Trace a Python script at runtime and merge dynamic edges:
+
+```bash
+python analyzer.py /path/to/project --trace-python app.py --serve
+```
+
+Trace a Python module with arguments:
+
+```bash
+python analyzer.py /path/to/project --trace-module myapp.cli --trace-arg=--mode --trace-arg=dev
+```
+
+Write the runtime artifact somewhere else:
+
+```bash
+python analyzer.py /path/to/project --trace-python app.py --runtime-output C:/temp/runtime_trace.json
+```
+
 Write output somewhere else and still serve correctly:
 
 ```bash
@@ -197,12 +236,20 @@ Load a graph directly in the browser UI:
 - use `OPEN GRAPH FILE`
 - or drag and drop a `graph.json`
 
+If runtime data is present, the `view` menu lets you switch between:
+
+- `static` edges only
+- `runtime` edges only
+- `combined` static + runtime edges
+
 ## Behavior Guarantees
 
 - Analysis does not edit the target repository's `.gitignore`
 - Cache writes stay in Orbits-owned files
 - `--serve` does not depend on changing the process working directory
 - Missing parser support is surfaced in metadata and UI/CLI messaging
+- Runtime tracing writes to a separate artifact instead of mutating static cache files
+- Source-changing reanalysis preserves runtime overlay but marks it stale until you rerun tracing
 
 ## Visualizer Features
 
@@ -211,6 +258,7 @@ Inspector shows:
 - file path
 - classification
 - inbound/outbound references
+- runtime edge markers (`dyn` or `rt`) when present
 - depth
 - island
 - cycle membership
@@ -230,6 +278,7 @@ Intentional suppressions are stored in:
 ## Key Files
 
 - `analyzer.py`: CLI entry point, HTTP serving, file actions, metadata APIs
+- `runtime_trace.py`: Python runtime tracer subprocess, artifact writer, runtime merge helpers
 - `lang_dispatch.py`: crawl orchestration, worker dispatch, language support metadata
 - `worker.py`: per-language extraction and resolution execution
 - `extractors/`: tree-sitter and fallback extractors
@@ -263,22 +312,33 @@ The repo currently includes regression coverage for:
 - serving behavior
 - unsupported parser metadata
 - Python import-from resolution
+- Python runtime trace capture and merge behavior
 - TypeScript alias resolution
 - Go module resolution
 - C / C++ include resolution
 - Java and Kotlin package resolution
 - end-to-end graph shape
 - synthetic benchmark graph generation
+- Playwright Stage 1 browser coverage for the visualizer, including runtime edge mode switching
 
-Run tests:
+Run backend tests:
 
 ```bash
 python -m unittest discover -s tests -v
 ```
 
+Run browser tests:
+
+```bash
+npm run test:e2e -- --reporter=line
+```
+
 ## Limitations
 
-- Dynamic imports, reflection, generated code, and macro-heavy systems remain hard limits for static analysis
+- Dynamic imports, reflection, generated code, and macro-heavy systems remain hard limits for static analysis alone
+- Python runtime tracing only sees code paths that actually execute
+- Python runtime tracing is time-bounded; timed-out sessions produce partial traces
 - Browser-side worker analysis is not guaranteed to match backend analysis exactly
 - Large graphs are handled more safely now, but browser and machine limits still matter
 - Git blame and file actions depend on local environment support and repository state
+- Runtime edges are an overlay today; they do not currently rewrite static health, cycle, depth, or waste calculations

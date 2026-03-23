@@ -73,3 +73,4 @@ graph.json
 test-results/
 playwright-report/
 
+runtime_trace.json

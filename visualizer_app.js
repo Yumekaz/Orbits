@@ -62,6 +62,7 @@
       searchQuery: '',
       leftPanel: 'waste-panel',
       layoutMode: 'force',
+      edgeMode: 'static',
       focusRadius: 0,
       highlightCycles: false,
       zoom: d3.zoomIdentity,
@@ -71,6 +72,8 @@
       perfMode: 'auto'
     };
   }
+
+
 
   function graphMetrics() {
     return { nodes: APP.graph?.nodes?.length || 0, edges: APP.graph?.edges?.length || 0 };
@@ -148,7 +151,7 @@
   function nodeVisible(node) { return APP.state.visibleClasses.has(node.classification) && (!node.language || currentLanguageSet().has(node.language)); }
 
   function captureElements() {
-    ['graph-canvas', 'canvas-wrap', 'minimap', 'drop-overlay', 'search-box', 'search-input', 'search-status', 'warning-banner', 'warning-copy', 'worker-status', 'worker-message', 'health-pill', 'elapsed', 'perf-mode', 'toast', 'btn-waste', 'btn-cycles', 'btn-insp', 'btn-cluster', 'btn-labels', 'btn-filter', 'btn-lang', 'btn-search', 'btn-reset', 'btn-folder', 'btn-open', 'btn-cycle-highlight', 'btn-focus', 'btn-full', 'btn-perf', 'layout-menu', 'layout-force', 'layout-cluster', 'layout-radial', 'lang-menu', 'lang-chip-grid', 'filter-panel', 'filter-chip-grid', 'waste-list', 'waste-badge', 'cycle-list', 'cycle-badge', 'left-rail', 'inspector', 'ip', 'ic', 'iname', 'imeta', 'ihistory', 'icycle', 'iout', 'iin', 'file-input', 'warning-dismiss', 'lang-all', 'lang-none', 'filter-all', 'filter-waste', 'filter-default', 's-files', 's-edges', 's-orphans', 's-cycles', 's-health', 's-unreachable', 's-max-depth', 's-resolved', 's-langs'].forEach((id) => { ELS[id] = $(id); });
+    ['graph-canvas', 'canvas-wrap', 'minimap', 'drop-overlay', 'search-box', 'search-input', 'search-status', 'warning-banner', 'warning-copy', 'worker-status', 'worker-message', 'health-pill', 'elapsed', 'perf-mode', 'toast', 'btn-waste', 'btn-cycles', 'btn-insp', 'btn-cluster', 'btn-labels', 'btn-filter', 'btn-lang', 'btn-search', 'btn-reset', 'btn-folder', 'btn-open', 'btn-cycle-highlight', 'btn-focus', 'btn-full', 'btn-perf', 'layout-menu', 'layout-force', 'layout-cluster', 'layout-radial', 'edge-mode-static', 'edge-mode-runtime', 'edge-mode-combined', 'lang-menu', 'lang-chip-grid', 'filter-panel', 'filter-chip-grid', 'waste-list', 'waste-badge', 'cycle-list', 'cycle-badge', 'left-rail', 'inspector', 'ip', 'ic', 'iname', 'imeta', 'ihistory', 'icycle', 'iout', 'iin', 'file-input', 'warning-dismiss', 'lang-all', 'lang-none', 'filter-all', 'filter-waste', 'filter-default', 's-files', 's-edges', 's-orphans', 's-cycles', 's-health', 's-unreachable', 's-max-depth', 's-resolved', 's-langs'].forEach((id) => { ELS[id] = $(id); });
     ELS.canvasWrap = $('canvas-wrap');
     APP.canvas = ELS['graph-canvas'];
     APP.ctx = APP.canvas.getContext('2d');
@@ -168,6 +171,108 @@
     const edges = [...graph.edges].map((e) => `${normalizeId(e.source)}>${normalizeId(e.target)}:${e.line || 0}`).sort();
     return simpleHash(`${nodes.join('|')}::${edges.join('|')}`);
   }
+
+  function normalizeEdge(edge, defaultOrigin) {
+    const origins = new Set(Array.isArray(edge.origins) ? edge.origins : []);
+    if (defaultOrigin) origins.add(defaultOrigin);
+    const runtime = origins.has('runtime') || !!edge.runtime;
+    const isStatic = origins.has('static') || defaultOrigin === 'static';
+    const runtimeHits = Number(edge.runtime_hits || edge.count || 0);
+    return {
+      ...edge,
+      source: normalizeId(edge.source.id || edge.source),
+      target: normalizeId(edge.target.id || edge.target),
+      line: edge.line || null,
+      type: edge.type || (runtime && !isStatic ? 'runtime_import' : 'import'),
+      language: edge.language || 'python',
+      origins: [...origins],
+      runtime,
+      static: isStatic,
+      dynamic: edge.dynamic ?? (runtime && !isStatic),
+      runtime_hits: runtimeHits,
+      runtime_modules: Array.isArray(edge.runtime_modules) ? edge.runtime_modules : [],
+      runtime_lines: Array.isArray(edge.runtime_lines) ? edge.runtime_lines : []
+    };
+  }
+
+  function edgeKey(edge) {
+    return `${normalizeId(edge.source)}>>${normalizeId(edge.target)}`;
+  }
+
+  function buildEdgeIndexes(edges, nodeById) {
+    const outboundByNode = new Map();
+    const inboundByNode = new Map();
+    const edgeListByNode = new Map();
+    const neighborsByNode = new Map();
+    nodeById.forEach((_node, id) => {
+      outboundByNode.set(id, []);
+      inboundByNode.set(id, []);
+      edgeListByNode.set(id, []);
+      neighborsByNode.set(id, new Set());
+    });
+    edges.forEach((edge) => {
+      if (!nodeById.has(edge.source) || !nodeById.has(edge.target)) return;
+      outboundByNode.get(edge.source).push(edge);
+      inboundByNode.get(edge.target).push(edge);
+      edgeListByNode.get(edge.source).push(edge);
+      edgeListByNode.get(edge.target).push(edge);
+      neighborsByNode.get(edge.source)?.add(edge.target);
+      neighborsByNode.get(edge.target)?.add(edge.source);
+    });
+    return { outboundByNode, inboundByNode, edgeListByNode, neighborsByNode };
+  }
+
+  function mergeEdgeSets(staticEdges, dynamicEdges) {
+    const merged = new Map();
+    staticEdges.forEach((edge) => {
+      merged.set(edgeKey(edge), {
+        ...edge,
+        origins: [...new Set(edge.origins || ['static'])],
+        static: true,
+        runtime: false,
+        dynamic: false,
+        runtime_hits: edge.runtime_hits || 0,
+        runtime_modules: [...(edge.runtime_modules || [])],
+        runtime_lines: [...(edge.runtime_lines || [])]
+      });
+    });
+    dynamicEdges.forEach((edge) => {
+      const key = edgeKey(edge);
+      const existing = merged.get(key);
+      if (!existing) {
+        merged.set(key, { ...edge, origins: [...new Set([...(edge.origins || []), 'runtime'])], static: false, runtime: true, dynamic: true });
+        return;
+      }
+      merged.set(key, {
+        ...existing,
+        runtime: true,
+        dynamic: false,
+        origins: [...new Set([...(existing.origins || []), 'runtime'])],
+        runtime_hits: (existing.runtime_hits || 0) + (edge.runtime_hits || 0),
+        runtime_modules: [...new Set([...(existing.runtime_modules || []), ...(edge.runtime_modules || [])])],
+        runtime_lines: [...new Set([...(existing.runtime_lines || []), ...(edge.runtime_lines || [])])]
+      });
+    });
+    return [...merged.values()].sort((a, b) => edgeKey(a).localeCompare(edgeKey(b)));
+  }
+
+  function activeEdgeMode() {
+    const hasRuntime = !!(APP.graph?.dynamic_edges?.length);
+    if (!hasRuntime) return 'static';
+    return ['static', 'runtime', 'combined'].includes(APP.state.edgeMode) ? APP.state.edgeMode : 'combined';
+  }
+
+  function activeEdgeBundle() {
+    return APP.indexes?.edgeSets?.[activeEdgeMode()] || APP.indexes?.edgeSets?.static || {
+      edges: [],
+      outboundByNode: new Map(),
+      inboundByNode: new Map(),
+      edgeListByNode: new Map(),
+      neighborsByNode: new Map()
+    };
+  }
+
+
 
   function getSearchTokens(node) {
     const full = normalizeId(node.filepath || node.id).toLowerCase();
@@ -214,21 +319,14 @@
 
   function buildIndexes(graph) {
     const nodeById = new Map();
-    const outboundByNode = new Map();
-    const inboundByNode = new Map();
-    const edgeListByNode = new Map();
     const nodesByLanguage = new Map();
     const nodesByClass = new Map();
     const cycleMembershipByNode = new Map();
     const searchByNode = new Map();
-    const edges = graph.edges.map((edge) => ({ ...edge, source: normalizeId(edge.source.id || edge.source), target: normalizeId(edge.target.id || edge.target), line: edge.line || null }));
 
     graph.nodes.forEach((node) => {
       const normalized = { ...node, id: normalizeId(node.id), filepath: normalizeId(node.filepath || node.id), dir: node.dir || dirname(node.id) };
       nodeById.set(normalized.id, normalized);
-      outboundByNode.set(normalized.id, []);
-      inboundByNode.set(normalized.id, []);
-      edgeListByNode.set(normalized.id, []);
       if (normalized.language) {
         if (!nodesByLanguage.has(normalized.language)) nodesByLanguage.set(normalized.language, new Set());
         nodesByLanguage.get(normalized.language).add(normalized.id);
@@ -238,13 +336,13 @@
       searchByNode.set(normalized.id, getSearchTokens(normalized));
     });
 
-    edges.forEach((edge) => {
-      if (!nodeById.has(edge.source) || !nodeById.has(edge.target)) return;
-      outboundByNode.get(edge.source).push(edge);
-      inboundByNode.get(edge.target).push(edge);
-      edgeListByNode.get(edge.source).push(edge);
-      edgeListByNode.get(edge.target).push(edge);
-    });
+    const staticEdges = (graph.edges || []).map((edge) => normalizeEdge(edge, 'static')).filter((edge) => nodeById.has(edge.source) && nodeById.has(edge.target));
+    const dynamicEdges = (graph.dynamic_edges || []).map((edge) => normalizeEdge(edge, 'runtime')).filter((edge) => nodeById.has(edge.source) && nodeById.has(edge.target));
+    const combinedEdges = mergeEdgeSets(staticEdges, dynamicEdges);
+
+    const staticBundle = buildEdgeIndexes(staticEdges, nodeById);
+    const dynamicBundle = buildEdgeIndexes(dynamicEdges, nodeById);
+    const combinedBundle = buildEdgeIndexes(combinedEdges, nodeById);
 
     (graph.cycles || []).forEach((cycle, index) => {
       cycle.map(normalizeId).forEach((id) => {
@@ -253,16 +351,9 @@
       });
     });
 
-    const neighborsByNode = new Map();
-    nodeById.forEach((_value, id) => neighborsByNode.set(id, new Set()));
-    edges.forEach((edge) => {
-      neighborsByNode.get(edge.source)?.add(edge.target);
-      neighborsByNode.get(edge.target)?.add(edge.source);
-    });
-
     nodeById.forEach((node, id) => {
-      const outbound = outboundByNode.get(id)?.length || 0;
-      const inbound = inboundByNode.get(id)?.length || 0;
+      const outbound = staticBundle.outboundByNode.get(id)?.length || 0;
+      const inbound = staticBundle.inboundByNode.get(id)?.length || 0;
       const degree = outbound + inbound;
       const cycleBoost = cycleMembershipByNode.has(id) ? 3 : 0;
       const depthBoost = node.depth >= 0 ? Math.max(0, 6 - Math.min(node.depth, 6)) : 0;
@@ -271,16 +362,40 @@
       node.importance = degree * 1.6 + cycleBoost + depthBoost + entryBoost + leafPenalty;
     });
 
-    return { nodeById, edges, outboundByNode, inboundByNode, edgeListByNode, nodesByLanguage, nodesByClass, cycleMembershipByNode, neighborsByNode, searchByNode, allLanguages: new Set([...nodesByLanguage.keys()]), hash: graphHash({ nodes: [...nodeById.values()], edges }) };
+    return {
+      nodeById,
+      edges: staticEdges,
+      dynamicEdges,
+      combinedEdges,
+      edgeSets: {
+        static: { edges: staticEdges, ...staticBundle },
+        runtime: { edges: dynamicEdges, ...dynamicBundle },
+        combined: { edges: combinedEdges, ...combinedBundle }
+      },
+      outboundByNode: staticBundle.outboundByNode,
+      inboundByNode: staticBundle.inboundByNode,
+      edgeListByNode: staticBundle.edgeListByNode,
+      neighborsByNode: staticBundle.neighborsByNode,
+      nodesByLanguage,
+      nodesByClass,
+      cycleMembershipByNode,
+      searchByNode,
+      allLanguages: new Set([...nodesByLanguage.keys()]),
+      hash: graphHash({ nodes: [...nodeById.values()], edges: staticEdges })
+    };
   }
+
+
 
   function setGraphData(data, options = {}) {
     APP.graph = {
       ...data,
       nodes: (data.nodes || []).map((node) => ({ ...node, id: normalizeId(node.id), filepath: normalizeId(node.filepath || node.id), dir: node.dir || dirname(node.id), name: node.name || basename(node.id) })),
       edges: (data.edges || []).map((edge) => ({ ...edge, source: normalizeId(edge.source.id || edge.source), target: normalizeId(edge.target.id || edge.target), line: edge.line || null })),
+      dynamic_edges: (data.dynamic_edges || []).map((edge) => ({ ...edge, source: normalizeId(edge.source.id || edge.source), target: normalizeId(edge.target.id || edge.target), line: edge.line || null })),
       cycles: (data.cycles || []).map((cycle) => cycle.map(normalizeId)),
-      waste: (data.waste || []).map((node) => ({ ...node, id: normalizeId(node.id) }))
+      waste: (data.waste || []).map((node) => ({ ...node, id: normalizeId(node.id) })),
+      runtime: data.runtime || null
     };
     APP.indexes = buildIndexes(APP.graph);
     APP.graph.nodes = APP.graph.nodes.map((node) => ({ ...node, importance: APP.indexes.nodeById.get(node.id)?.importance || 0 }));
@@ -294,6 +409,7 @@
     APP.state.visibleClasses = new Set(DEFAULT_CLASSES);
     APP.state.showLabels = true;
     APP.state.showFullGraph = APP.graph.nodes.length <= 220;
+    APP.state.edgeMode = APP.graph.dynamic_edges.length ? 'combined' : 'static';
     applyLargeGraphDefaults();
     ELS['search-input'].value = '';
     ELS['drop-overlay'].classList.add('hidden');
@@ -306,7 +422,14 @@
     syncShellState();
     requestLayout();
     if ((APP.graph.summary?.cycle_count || 0) > 0 && options.source !== 'browser-analysis') toast(`Alert: ${APP.graph.summary.cycle_count} circular dependencies found!`);
+    if (APP.graph.dynamic_edges.length && options.source !== 'browser-analysis') {
+      const runtimeMeta = APP.graph.meta?.runtime || {};
+      const count = runtimeMeta.dynamic_edges || APP.graph.dynamic_edges.length;
+      toast(`Runtime trace loaded: ${count} dynamic edge${count === 1 ? '' : 's'}`);
+    }
   }
+
+
 
   function requestLayout() {
     if (!APP.graph || !APP.indexes) return;
@@ -412,13 +535,13 @@
     return { minX: (-t.x) / t.k - pad, minY: (-t.y) / t.k - pad, maxX: (width - t.x) / t.k + pad, maxY: (height - t.y) / t.k + pad };
   }
 
-  function buildSearchTreeSet(matchIds, allowedIds) {
+  function buildSearchTreeSet(matchIds, allowedIds, neighborsByNode) {
     if (!matchIds.length) return new Set();
     const seen = new Set(matchIds);
     const queue = [...matchIds];
     while (queue.length) {
       const id = queue.shift();
-      (APP.indexes.neighborsByNode.get(id) || new Set()).forEach((next) => {
+      (neighborsByNode.get(id) || new Set()).forEach((next) => {
         if (!allowedIds.has(next) || seen.has(next)) return;
         seen.add(next);
         queue.push(next);
@@ -427,14 +550,14 @@
     return seen;
   }
 
-  function buildFocusSet(selectedId, radius, allowedIds) {
+  function buildFocusSet(selectedId, radius, allowedIds, neighborsByNode) {
     if (!selectedId || radius <= 0) return null;
     const seen = new Set([selectedId]);
     let frontier = new Set([selectedId]);
     for (let depth = 0; depth < radius; depth += 1) {
       const next = new Set();
       frontier.forEach((id) => {
-        (APP.indexes.neighborsByNode.get(id) || new Set()).forEach((neighbor) => {
+        (neighborsByNode.get(id) || new Set()).forEach((neighbor) => {
           if (!allowedIds.has(neighbor) || seen.has(neighbor)) return;
           seen.add(neighbor);
           next.add(neighbor);
@@ -445,6 +568,7 @@
     }
     return seen;
   }
+
 
 
   function buildDragInfluence(rootId, maxDepth = 3) {
@@ -590,6 +714,8 @@
 
   function deriveRenderModel() {
     if (!APP.graph || !APP.indexes) return null;
+    const edgeBundle = activeEdgeBundle();
+    const activeEdges = edgeBundle.edges;
     const baseNodes = APP.graph.nodes.filter(nodeVisible);
     const baseIds = new Set(baseNodes.map((node) => node.id));
     const matchedNodes = APP.state.searchQuery ? baseNodes.filter((node) => {
@@ -597,8 +723,8 @@
       const q = APP.state.searchQuery.toLowerCase();
       return search.base.includes(q) || search.full.includes(q) || [...search.tokens].some((token) => token.includes(q));
     }) : [];
-    const searchTree = APP.state.searchQuery ? buildSearchTreeSet(matchedNodes.map((node) => node.id), baseIds) : null;
-    const focusSet = buildFocusSet(APP.state.selectedId, APP.state.focusRadius, baseIds);
+    const searchTree = APP.state.searchQuery ? buildSearchTreeSet(matchedNodes.map((node) => node.id), baseIds, edgeBundle.neighborsByNode) : null;
+    const focusSet = buildFocusSet(APP.state.selectedId, APP.state.focusRadius, baseIds, edgeBundle.neighborsByNode);
     let workingNodes = focusSet ? baseNodes.filter((node) => focusSet.has(node.id)) : baseNodes;
     const hugeGraph = baseNodes.length > 220;
     const zoomK = APP.state.zoom.k;
@@ -612,7 +738,7 @@
       }
     }
     const workingIds = new Set(workingNodes.map((node) => node.id));
-    const workingEdges = APP.indexes.edges.filter((edge) => workingIds.has(edge.source) && workingIds.has(edge.target));
+    const workingEdges = activeEdges.filter((edge) => workingIds.has(edge.source) && workingIds.has(edge.target));
     const bounds = getViewportBounds();
     let renderNodes = workingNodes.filter((node) => withinViewport(node, bounds) || node.id === APP.state.selectedId || (searchTree && searchTree.has(node.id)));
     if (hugeGraph) renderNodes = capNodesForRender(renderNodes, APP.state.selectedId, searchTree, zoomK);
@@ -626,8 +752,10 @@
     if (hugeGraph || renderEdges.length > PERF.maxRenderEdgesNormal) renderEdges = capEdgesForRender(renderEdges, APP.state.selectedId, searchTree, dense);
     dense = renderNodes.length > 240 || renderEdges.length > 700;
     const showLabels = APP.state.showLabels && (zoomK > 0.62 || APP.state.selectedId || APP.state.searchQuery) && !(hugeGraph && zoomK < 0.52 && !APP.state.selectedId && !APP.state.searchQuery);
-    return { baseNodes, workingNodes, workingEdges, renderNodes, renderEdges, matchedNodes, searchTree, bounds, dense, showLabels, clusterOnly, hugeGraph, zoomK };
+    return { baseNodes, workingNodes, workingEdges, renderNodes, renderEdges, matchedNodes, searchTree, bounds, dense, showLabels, clusterOnly, hugeGraph, zoomK, activeEdgeMode: activeEdgeMode(), visibleDynamicEdges: renderEdges.filter((edge) => edge.runtime).length };
   }
+
+
 
   function toScreen(x, y) {
     const t = APP.state.zoom;
@@ -677,12 +805,22 @@
   function edgeStyle(edge, model) {
     const selected = APP.state.selectedId;
     const inCycle = APP.state.highlightCycles && APP.indexes.cycleMembershipByNode.has(edge.source) && APP.indexes.cycleMembershipByNode.has(edge.target);
-    if (selected && (edge.source === selected || edge.target === selected)) return { stroke: 'rgba(0,229,255,.95)', opacity: 1, width: 1.9, arrow: !model.dense };
-    if (inCycle) return { stroke: 'rgba(255,170,0,.92)', opacity: .95, width: 1.7, arrow: !model.dense };
-    if (model.searchTree && model.searchTree.has(edge.source) && model.searchTree.has(edge.target)) return { stroke: 'rgba(0,229,255,.5)', opacity: .45, width: 1.25, arrow: false };
-    if (selected) return { stroke: 'rgba(31,37,64,.55)', opacity: .08, width: 1, arrow: false };
-    if (APP.state.searchQuery) return { stroke: 'rgba(31,37,64,.55)', opacity: model.searchTree && model.searchTree.has(edge.source) && model.searchTree.has(edge.target) ? .4 : .05, width: 1, arrow: false };
-    return { stroke: 'rgba(31,37,64,.72)', opacity: 1, width: model.dense ? .8 : 1.1, arrow: !model.dense && model.zoomK > .75 && model.renderEdges.length < 220 };
+    const runtimeOnly = !!edge.dynamic;
+    const bothOrigins = !!edge.runtime && !runtimeOnly;
+    const baseStroke = runtimeOnly ? 'rgba(255,148,212,.82)' : bothOrigins ? 'rgba(124,247,207,.78)' : 'rgba(31,37,64,.72)';
+    const baseWidth = runtimeOnly ? (model.dense ? 1 : 1.35) : bothOrigins ? (model.dense ? 1.05 : 1.4) : (model.dense ? .8 : 1.1);
+    const baseDash = runtimeOnly ? [8, 5] : [];
+    if (selected && (edge.source === selected || edge.target === selected)) {
+      const stroke = runtimeOnly ? 'rgba(255,148,212,.98)' : bothOrigins ? 'rgba(124,247,207,.98)' : 'rgba(0,229,255,.95)';
+      return { stroke, opacity: 1, width: runtimeOnly ? 2.05 : 1.9, arrow: !runtimeOnly && !model.dense, dash: runtimeOnly ? [9, 5] : [] };
+    }
+    if (inCycle) return { stroke: 'rgba(255,170,0,.92)', opacity: .95, width: 1.7, arrow: !model.dense && !runtimeOnly, dash: runtimeOnly ? [8, 5] : [] };
+    if (model.searchTree && model.searchTree.has(edge.source) && model.searchTree.has(edge.target)) {
+      return { stroke: runtimeOnly ? 'rgba(255,148,212,.72)' : bothOrigins ? 'rgba(124,247,207,.72)' : 'rgba(0,229,255,.5)', opacity: .6, width: runtimeOnly ? 1.5 : 1.25, arrow: false, dash: runtimeOnly ? [7, 4] : [] };
+    }
+    if (selected) return { stroke: 'rgba(31,37,64,.55)', opacity: .08, width: 1, arrow: false, dash: [] };
+    if (APP.state.searchQuery) return { stroke: baseStroke, opacity: model.searchTree && model.searchTree.has(edge.source) && model.searchTree.has(edge.target) ? .4 : .05, width: baseWidth, arrow: false, dash: baseDash };
+    return { stroke: baseStroke, opacity: 1, width: baseWidth, arrow: !runtimeOnly && !model.dense && model.zoomK > .75 && model.renderEdges.length < 220, dash: baseDash };
   }
 
   function drawArrowhead(x1, y1, x2, y2, color) {
@@ -711,16 +849,20 @@
       const b = toScreen(target.x, target.y);
       const style = edgeStyle(edge, model);
       APP.ctx.beginPath();
+      APP.ctx.setLineDash(style.dash || []);
       APP.ctx.moveTo(a.x, a.y);
       APP.ctx.lineTo(b.x, b.y);
       APP.ctx.strokeStyle = style.stroke;
       APP.ctx.globalAlpha = style.opacity;
       APP.ctx.lineWidth = style.width;
       APP.ctx.stroke();
+      APP.ctx.setLineDash([]);
       if (style.arrow) drawArrowhead(a.x, a.y, b.x, b.y, style.stroke);
     });
     APP.ctx.restore();
   }
+
+
 
   function nodeOpacity(node, model) {
     if (APP.state.searchQuery) return model.searchTree && model.searchTree.has(node.id) ? 1 : .1;
@@ -888,13 +1030,23 @@
   }
 
   function updateUnsupportedBanner() {
-    const items = APP.graph?.meta?.unsupported_languages || [];
-    if (!items.length || APP.state.dismissedWarning) { ELS['warning-banner'].classList.remove('show'); return; }
-    const pkgs = new Set();
-    items.forEach((item) => (PKG_HINTS[item.language] || []).forEach((pkg) => pkgs.add(pkg)));
-    ELS['warning-copy'].innerHTML = `<strong>Warning</strong> ${items.map((item) => `${displayLang(item.language)} parser unavailable - ${item.files} files were not analysed`).join(' • ')}. Run: <code>pip install ${[...pkgs].join(' ')}</code>`;
+    const messages = [];
+    const unsupported = APP.graph?.meta?.unsupported_languages || [];
+    if (unsupported.length) {
+      const pkgs = new Set();
+      unsupported.forEach((item) => (PKG_HINTS[item.language] || []).forEach((pkg) => pkgs.add(pkg)));
+      messages.push(`<strong>Warning</strong> ${unsupported.map((item) => `${displayLang(item.language)} parser unavailable - ${item.files} files were not analysed`).join(' • ')}. Run: <code>pip install ${[...pkgs].join(' ')}</code>`);
+    }
+    const runtimeMeta = APP.graph?.meta?.runtime || {};
+    if (runtimeMeta.enabled && runtimeMeta.stale) messages.push('<strong>Runtime trace stale</strong> Static analysis was refreshed after source changes. Re-run tracing to refresh dynamic edges.');
+    if (runtimeMeta.enabled && runtimeMeta.timed_out) messages.push('<strong>Runtime trace partial</strong> The traced program timed out, so dynamic edges may be incomplete.');
+    if (runtimeMeta.enabled && runtimeMeta.error) messages.push(`<strong>Runtime trace error</strong> ${escapeHtml(String(runtimeMeta.error))}`);
+    if (!messages.length || APP.state.dismissedWarning) { ELS['warning-banner'].classList.remove('show'); return; }
+    ELS['warning-copy'].innerHTML = messages.join('<br><br>');
     ELS['warning-banner'].classList.add('show');
   }
+
+
 
   function updateStats() {
     if (!APP.graph) return;
@@ -902,8 +1054,10 @@
     const imp = APP.graph.meta?.import_stats || {};
     const totalImports = Object.values(imp).reduce((sum, value) => sum + value, 0);
     const resolvedPct = totalImports ? Math.round(((imp.local || 0) / totalImports) * 100) : 0;
+    const edgeBundle = activeEdgeBundle();
+    const runtimeMeta = APP.graph.meta?.runtime || {};
     ELS['s-files'].textContent = APP.graph.nodes.length;
-    ELS['s-edges'].textContent = APP.graph.edges.length;
+    ELS['s-edges'].textContent = edgeBundle.edges.length;
     ELS['s-orphans'].textContent = (APP.graph.waste || []).length;
     ELS['s-cycles'].textContent = s.cycle_count || 0;
     ELS['s-health'].textContent = s.health_score ?? '—';
@@ -914,15 +1068,27 @@
     ELS['s-resolved'].style.color = resolvedPct > 80 ? 'var(--green)' : resolvedPct > 50 ? 'var(--amber)' : 'var(--red)';
     ELS['health-pill'].querySelector('span').textContent = s.health_score ?? '—';
     ELS['health-pill'].classList.remove('hidden');
-    ELS['elapsed'].textContent = APP.graph.meta?.elapsed_s ? `Analysed in ${APP.graph.meta.elapsed_s}s` : '';
+    const runtimeSuffix = runtimeMeta.enabled ? ` • Runtime ${runtimeMeta.dynamic_edges || 0} dyn` : '';
+    ELS['elapsed'].textContent = APP.graph.meta?.elapsed_s ? `Analysed in ${APP.graph.meta.elapsed_s}s${runtimeSuffix}` : runtimeSuffix.replace(/^ • /, '');
     updatePerformanceControls();
   }
 
+
+
   function renderChips(el, edges, dir) {
     if (!edges.length) { el.innerHTML = '<div style="color:var(--dim);font-size:10px">None</div>'; return; }
-    el.innerHTML = `<div class="chip-cont">${edges.map((edge) => { const id = dir === 'in' ? edge.source : edge.target; const line = edge.line ? `:${edge.line}` : ''; return `<div class="chip ${dir}" data-focus="${escapeHtml(id)}" title="${escapeHtml(id + line)}">${escapeHtml(basename(id))}${line}</div>`; }).join('')}</div>`;
+    el.innerHTML = `<div class="chip-cont">${edges.map((edge) => {
+      const id = dir === 'in' ? edge.source : edge.target;
+      const line = edge.line ? `:${edge.line}` : '';
+      const runtimeTag = edge.runtime ? (edge.dynamic ? ' dyn' : ' rt') : '';
+      const hitTag = edge.runtime_hits ? ` ×${edge.runtime_hits}` : '';
+      const flavor = edge.runtime ? (edge.dynamic ? 'runtime' : 'both') : '';
+      return `<div class="chip ${dir} ${flavor}" data-focus="${escapeHtml(id)}" title="${escapeHtml(id + line + runtimeTag + hitTag)}">${escapeHtml(basename(id))}${line}${runtimeTag}${hitTag}</div>`;
+    }).join('')}</div>`;
     el.querySelectorAll('[data-focus]').forEach((chip) => chip.addEventListener('click', () => focusNode(chip.dataset.focus)));
   }
+
+
 
   function itemRow(node, color) {
     const id = escapeHtml(normalizeId(node.id));
@@ -999,13 +1165,17 @@
     }
     const node = APP.indexes.nodeById.get(APP.state.selectedId);
     if (!node) { clearSelection(); return; }
-    const inEdges = APP.indexes.inboundByNode.get(node.id) || [];
-    const outEdges = APP.indexes.outboundByNode.get(node.id) || [];
+    const edgeBundle = activeEdgeBundle();
+    const inEdges = edgeBundle.inboundByNode.get(node.id) || [];
+    const outEdges = edgeBundle.outboundByNode.get(node.id) || [];
+    const runtimeOut = outEdges.filter((edge) => edge.runtime).length;
+    const runtimeIn = inEdges.filter((edge) => edge.runtime).length;
     ELS.ip.style.display = 'none';
     ELS.ic.style.display = 'block';
     ELS.iname.textContent = normalizeId(node.filepath || node.id);
     const island = node.island_id >= 0 ? `<span class="v" style="color:var(--purple)">Cluster ${node.island_id + 1}</span>` : '<span class="v">—</span>';
-    ELS.imeta.innerHTML = `<div class="kv-row"><span class="k">Class</span><span class="v" style="color:${getTheme(node.classification).stroke}">${escapeHtml(node.classification)}</span></div><div class="kv-row"><span class="k">Size</span><span class="v">${formatSize(node.size)}</span></div><div class="kv-row"><span class="k">Inbound</span><span class="v">${inEdges.length}</span></div><div class="kv-row"><span class="k">Outbound</span><span class="v">${outEdges.length}</span></div><div class="kv-row"><span class="k">Language</span><span class="v" style="color:${getLangColor(node.language)}">${escapeHtml(node.language || '—')}</span></div><div class="kv-row"><span class="k">Depth</span><span class="v">${node.depth >= 0 ? node.depth : '∞'}</span></div><div class="kv-row"><span class="k">Island</span>${island}</div><div class="kv-row"><span class="k">Modified</span><span class="v">${formatDate(node.mtime)}</span></div>`;
+    const runtimeRow = APP.graph.dynamic_edges?.length ? `<div class="kv-row"><span class="k">Runtime</span><span class="v">${runtimeOut} out / ${runtimeIn} in</span></div>` : '';
+    ELS.imeta.innerHTML = `<div class="kv-row"><span class="k">Class</span><span class="v" style="color:${getTheme(node.classification).stroke}">${escapeHtml(node.classification)}</span></div><div class="kv-row"><span class="k">Size</span><span class="v">${formatSize(node.size)}</span></div><div class="kv-row"><span class="k">Inbound</span><span class="v">${inEdges.length}</span></div><div class="kv-row"><span class="k">Outbound</span><span class="v">${outEdges.length}</span></div><div class="kv-row"><span class="k">Language</span><span class="v" style="color:${getLangColor(node.language)}">${escapeHtml(node.language || '—')}</span></div><div class="kv-row"><span class="k">Depth</span><span class="v">${node.depth >= 0 ? node.depth : '∞'}</span></div><div class="kv-row"><span class="k">Island</span>${island}</div>${runtimeRow}<div class="kv-row"><span class="k">Modified</span><span class="v">${formatDate(node.mtime)}</span></div>`;
     const cycles = APP.indexes.cycleMembershipByNode.get(node.id) || [];
     ELS.icycle.innerHTML = cycles.length ? cycles.map((entry) => `<div class="chip-cont"><div style="font-size:9px;color:var(--amber);letter-spacing:.12em;text-transform:uppercase">Cycle ${entry.index + 1}</div><div class="cycle-path">${entry.path.map((id, idx) => `${idx ? '<span class="cycle-arrow">→</span>' : ''}<span class="chip cycle" data-focus="${escapeHtml(id)}">${escapeHtml(basename(id))}</span>`).join('')}</div></div>`).join('') : '<div style="color:var(--dim);font-size:10px">This node is not part of a cycle.</div>';
     ELS.icycle.querySelectorAll('[data-focus]').forEach((chip) => chip.addEventListener('click', () => focusNode(chip.dataset.focus)));
@@ -1019,6 +1189,8 @@
     });
     syncActiveListRows();
   }
+
+
 
   function syncActiveListRows() { document.querySelectorAll('.list-item').forEach((item) => item.classList.toggle('active', normalizeId(item.dataset.id) === APP.state.selectedId)); }
   function setSelection(id) { APP.state.selectedId = id ? normalizeId(id) : null; updateInspector(); scheduleRender(); }
@@ -1099,16 +1271,27 @@
   }
 
   function updateLayoutControls() {
+    const mode = activeEdgeMode();
+    const hasRuntime = !!(APP.graph?.dynamic_edges?.length);
     ELS['layout-force'].classList.toggle('on', APP.state.layoutMode === 'force');
     ELS['layout-cluster'].classList.toggle('on', APP.state.layoutMode === 'cluster');
     ELS['layout-radial'].classList.toggle('on', APP.state.layoutMode === 'radial');
-    ELS['btn-cluster'].classList.toggle('on', APP.state.layoutMode !== 'force' || ELS['layout-menu'].classList.contains('open'));
+    ELS['edge-mode-static'].classList.toggle('on', mode === 'static');
+    ELS['edge-mode-runtime'].classList.toggle('on', mode === 'runtime');
+    ELS['edge-mode-combined'].classList.toggle('on', mode === 'combined');
+    ELS['edge-mode-runtime'].disabled = !hasRuntime;
+    ELS['edge-mode-combined'].disabled = !hasRuntime;
+    const defaultViewMode = hasRuntime ? 'combined' : 'static';
+    const viewActive = APP.state.layoutMode !== 'force' || ELS['layout-menu'].classList.contains('open') || APP.state.focusRadius > 0 || APP.state.showFullGraph || APP.state.perfMode !== 'auto' || !APP.state.showLabels || mode !== defaultViewMode;
+    ELS['btn-cluster'].classList.toggle('on', viewActive);
     ELS['btn-focus'].textContent = APP.state.focusRadius === 0 ? 'focus off' : `focus r${APP.state.focusRadius}`;
     ELS['btn-focus'].classList.toggle('on', APP.state.focusRadius > 0);
     ELS['btn-full'].classList.toggle('on', APP.state.showFullGraph);
     ELS['btn-full'].textContent = APP.state.showFullGraph ? 'full on' : 'full off';
     updatePerformanceControls();
   }
+
+
 
   function syncShellState() {
     ELS['left-rail'].classList.remove('collapsed');
@@ -1120,6 +1303,18 @@
     updateLeftPanel();
     updateLayoutControls();
     updatePerformanceControls();
+  }
+
+  function setEdgeMode(mode) {
+    if (!APP.graph) return;
+    const hasRuntime = !!(APP.graph.dynamic_edges || []).length;
+    const nextMode = hasRuntime ? mode : 'static';
+    if (APP.state.edgeMode === nextMode) return;
+    APP.state.edgeMode = nextMode;
+    updateStats();
+    updateInspector();
+    updateLayoutControls();
+    scheduleRender();
   }
 
   function setLayoutMode(mode) {
@@ -1351,6 +1546,9 @@
     document.querySelectorAll('.left-tab').forEach((tab) => tab.addEventListener('click', () => setLeftPanel(tab.dataset.leftPanel)));
     ELS['btn-insp'].onclick = function () { ELS.inspector.classList.toggle('collapsed'); this.classList.toggle('on'); refreshViewportAfterShellChange(); };
     ELS['btn-cluster'].onclick = () => openAnchoredMenu(ELS['btn-cluster'], ELS['layout-menu']);
+    ELS['edge-mode-static'].onclick = () => setEdgeMode('static');
+    ELS['edge-mode-runtime'].onclick = () => setEdgeMode('runtime');
+    ELS['edge-mode-combined'].onclick = () => setEdgeMode('combined');
     ELS['layout-force'].onclick = () => { setLayoutMode('force'); ELS['layout-menu'].classList.remove('open'); };
     ELS['layout-cluster'].onclick = () => { setLayoutMode('cluster'); ELS['layout-menu'].classList.remove('open'); };
     ELS['layout-radial'].onclick = () => { setLayoutMode('radial'); ELS['layout-menu'].classList.remove('open'); };
@@ -1417,9 +1615,12 @@
       get graphLoaded() { return !!APP.graph; },
       get graphNodeCount() { return APP.graph?.nodes?.length ?? 0; },
       get graphEdgeCount() { return APP.graph?.edges?.length ?? 0; },
+      get graphDynamicEdgeCount() { return APP.graph?.dynamic_edges?.length ?? 0; },
       get selectedNodeId() { return APP.state.selectedId; },
       get visibleNodeCount() { return APP.renderModel?.renderNodes?.length ?? 0; },
       get visibleEdgeCount() { return APP.renderModel?.renderEdges?.length ?? 0; },
+      get visibleDynamicEdgeCount() { return APP.renderModel?.renderEdges?.filter((edge) => edge.runtime).length ?? 0; },
+      get edgeMode() { return activeEdgeMode(); },
       get menuStates() {
         return {
           langOpen: ELS['lang-menu'].classList.contains('open'),

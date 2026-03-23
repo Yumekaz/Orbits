@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { getDebug, loadFixture, sampleCanvasPixels } from './helpers';
+import { getDebug, loadFixture, openMenu, sampleCanvasPixels } from './helpers';
 
 test.describe('fixture-specific behavior', () => {
   test('cycles fixture exposes cycle panel interactions', async ({ page }) => {
@@ -16,6 +16,31 @@ test.describe('fixture-specific behavior', () => {
     await page.getByTestId('btn-languages').click();
     await page.locator('#lang-chip-grid').getByRole('button', { name: /Go/i }).click();
     await expect.poll(async () => (await getDebug(page)).visibleNodeCount).toBeLessThan(before);
+  });
+
+
+  test('runtime fixture switches edge source modes without blanking the canvas', async ({ page }) => {
+    await loadFixture(page, 'runtime-graph.json');
+    let debug = await getDebug(page);
+    expect(debug.graphDynamicEdgeCount).toBe(2);
+    expect(debug.edgeMode).toBe('combined');
+    expect(debug.visibleEdgeCount).toBeGreaterThanOrEqual(3);
+
+    await openMenu(page, 'btn-view');
+    await page.locator('#edge-mode-runtime').click();
+    await expect.poll(async () => (await getDebug(page)).edgeMode).toBe('runtime');
+    debug = await getDebug(page);
+    expect(debug.visibleEdgeCount).toBe(2);
+    expect(debug.visibleDynamicEdgeCount).toBe(2);
+
+    await page.locator('#edge-mode-static').click();
+    await expect.poll(async () => (await getDebug(page)).edgeMode).toBe('static');
+    debug = await getDebug(page);
+    expect(debug.visibleEdgeCount).toBe(2);
+
+    await page.locator('#edge-mode-combined').click();
+    await expect.poll(async () => (await getDebug(page)).edgeMode).toBe('combined');
+    await expect(await sampleCanvasPixels(page)).toBeGreaterThan(20);
   });
 
   test('unsupported-language fixture shows and dismisses the warning banner', async ({ page }) => {
