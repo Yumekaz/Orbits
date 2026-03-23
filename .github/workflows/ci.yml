@@ -1,0 +1,133 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend tests
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\pip\Cache
+          key: ${{ runner.os }}-py312-pip-v1
+          restore-keys: |
+            ${{ runner.os }}-py312-pip-
+
+      - name: Create virtual environment
+        run: python -m venv .venv
+
+      - name: Upgrade pip
+        run: .\.venv\Scripts\python.exe -m pip install --upgrade pip
+
+      - name: Install tree-sitter runtime packages
+        run: >
+          .\.venv\Scripts\python.exe -m pip install
+          tree-sitter
+          tree-sitter-python
+          tree-sitter-javascript
+          tree-sitter-typescript
+          tree-sitter-go
+          tree-sitter-c
+          tree-sitter-cpp
+          tree-sitter-java
+          tree-sitter-kotlin
+
+      - name: Run backend tests
+        run: .\.venv\Scripts\python.exe -m unittest discover -s tests -v
+
+  e2e:
+    name: Playwright Stage 1
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\pip\Cache
+          key: ${{ runner.os }}-py312-pip-v1
+          restore-keys: |
+            ${{ runner.os }}-py312-pip-
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('package-lock.json') }}-v1
+          restore-keys: |
+            ${{ runner.os }}-playwright-
+
+      - name: Create virtual environment
+        run: python -m venv .venv
+
+      - name: Upgrade pip
+        run: .\.venv\Scripts\python.exe -m pip install --upgrade pip
+
+      - name: Install tree-sitter runtime packages
+        run: >
+          .\.venv\Scripts\python.exe -m pip install
+          tree-sitter
+          tree-sitter-python
+          tree-sitter-javascript
+          tree-sitter-typescript
+          tree-sitter-go
+          tree-sitter-c
+          tree-sitter-cpp
+          tree-sitter-java
+          tree-sitter-kotlin
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        run: npx playwright install chromium
+
+      - name: Run Playwright Stage 1 suite
+        run: npm run test:e2e -- --reporter=line
+
+      - name: Upload Playwright failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-artifacts
+          path: |
+            test-results
+            playwright-report
+          if-no-files-found: ignore
