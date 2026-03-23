@@ -9,6 +9,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
+from path_utils import relative_to_root
+
 
 _HEADER_EXTENSIONS = ('.h', '.hpp', '.hh', '.hxx', '.inc')
 
@@ -118,7 +120,4 @@ class CFamilyResolver:
         return None
 
     def _rel(self, path: Path) -> Optional[str]:
-        try:
-            return str(path.relative_to(self.root))
-        except ValueError:
-            return None
+        return relative_to_root(path, self.root)

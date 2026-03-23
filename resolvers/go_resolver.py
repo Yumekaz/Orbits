@@ -7,6 +7,8 @@ go.mod module name is used to detect which imports are local.
 from pathlib import Path
 from typing import Optional
 
+from path_utils import relative_to_root
+
 
 _GO_STDLIB_TOP = frozenset({
     'archive','bufio','builtin','bytes','cmp','compress','container',
@@ -68,8 +70,7 @@ class GoResolver:
         if not base.is_dir():
             return None
         for f in base.glob('*.go'):
-            try:
-                return str(f.relative_to(self.root))
-            except ValueError:
-                pass
+            rel = relative_to_root(f, self.root)
+            if rel:
+                return rel
         return None

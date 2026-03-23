@@ -35,6 +35,8 @@ from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Optional
 
+from path_utils import relative_to_root
+
 
 # ── Import classification ──────────────────────────────────────────────────
 
@@ -361,27 +363,31 @@ def _find_on_disk(
         # Full path as package: utils/helpers/__init__.py
         pkg = base.joinpath(*parts) / '__init__.py'
         if pkg.exists():
-            try: return str(pkg.relative_to(root))
-            except ValueError: pass
+            rel = relative_to_root(pkg, root)
+            if rel:
+                return rel
 
         # Full path as module: utils/helpers.py
         if len(parts) >= 2:
             mod = base.joinpath(*parts[:-1]) / (parts[-1] + '.py')
             if mod.exists():
-                try: return str(mod.relative_to(root))
-                except ValueError: pass
+                rel = relative_to_root(mod, root)
+                if rel:
+                    return rel
 
         # Single-part module: utils/__init__.py or utils.py
         if len(parts) == 1:
             top_pkg = base / parts[0] / '__init__.py'
             if top_pkg.exists():
-                try: return str(top_pkg.relative_to(root))
-                except ValueError: pass
+                rel = relative_to_root(top_pkg, root)
+                if rel:
+                    return rel
 
             top_mod = base / (parts[0] + '.py')
             if top_mod.exists():
-                try: return str(top_mod.relative_to(root))
-                except ValueError: pass
+                rel = relative_to_root(top_mod, root)
+                if rel:
+                    return rel
 
         # Namespace package: directory exists, no __init__.py
         # PEP 420 — treat as valid if it contains any .py files
@@ -389,8 +395,9 @@ def _find_on_disk(
         if ns_dir.is_dir() and any(ns_dir.glob('*.py')):
             # Point to first .py file as proxy (best we can do without __init__)
             first = next(ns_dir.glob('*.py'))
-            try: return str(first.relative_to(root))
-            except ValueError: pass
+            rel = relative_to_root(first, root)
+            if rel:
+                return rel
 
     return None
 
@@ -547,14 +554,13 @@ class PythonResolver:
             # 'from . import x' — anchor is the package
             init = anchor / '__init__.py'
             if init.exists():
-                try:
+                rel = relative_to_root(init, self.root)
+                if rel:
                     return ResolveResult(
                         raw='.',
                         kind=ImportKind.LOCAL,
-                        path=str(init.relative_to(self.root))
+                        path=rel
                     )
-                except ValueError:
-                    pass
             return ResolveResult(raw='.', kind=ImportKind.UNKNOWN)
 
         parts = module_name.split('.')

@@ -9,6 +9,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
+from path_utils import relative_to_root
+
 
 _SOURCE_EXTENSIONS = {'.js', '.mjs', '.cjs', '.jsx', '.ts', '.mts', '.cts', '.tsx'}
 _ASSET_EXTENSIONS = {
@@ -230,7 +232,4 @@ class JsResolver:
         return None
 
     def _rel(self, path: Path) -> Optional[str]:
-        try:
-            return str(path.relative_to(self.root))
-        except ValueError:
-            return None
+        return relative_to_root(path, self.root)

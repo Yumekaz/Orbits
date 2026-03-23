@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
+from path_utils import relative_to_root
+
 
 _STDLIB_PREFIXES = ('java.', 'javax.', 'kotlin.')
 
@@ -44,15 +46,15 @@ class JvmProjectConfig:
             for path in src_root.rglob('*'):
                 if path.suffix not in {'.java', '.kt'} or not path.is_file():
                     continue
-                try:
-                    rel = path.relative_to(self.root)
-                    rel_to_src = path.relative_to(src_root)
-                except ValueError:
+                rel = relative_to_root(path, self.root)
+                rel_to_src = relative_to_root(path, src_root)
+                if not rel or not rel_to_src:
                     continue
-                package = '.'.join(rel_to_src.parent.parts) if rel_to_src.parent.parts else ''
-                rel_str = str(rel)
+                rel_to_src_path = Path(rel_to_src)
+                package = '.'.join(rel_to_src_path.parent.parts) if rel_to_src_path.parent.parts else ''
+                rel_str = rel
                 self.package_files.setdefault(package, []).append(rel_str)
-                symbol = rel_to_src.with_suffix('')
+                symbol = rel_to_src_path.with_suffix('')
                 fqcn = '.'.join(symbol.parts)
                 if fqcn:
                     self.symbol_files.setdefault(fqcn, rel_str)

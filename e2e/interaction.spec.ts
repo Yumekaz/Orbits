@@ -36,15 +36,15 @@ test.describe('graph interactions', () => {
   test('panel collapse and expand preserves rendered content', async ({ page }) => {
     await page.getByTestId('btn-waste').click();
     await expect.poll(async () => (await getDebug(page)).shellState.leftRailCollapsed).toBe(true);
-    expect(await sampleCanvasPixels(page)).toBeGreaterThan(20);
+    await expect.poll(async () => sampleCanvasPixels(page)).toBeGreaterThan(20);
 
     await page.getByTestId('btn-inspector').click();
     await expect.poll(async () => (await getDebug(page)).shellState.inspectorCollapsed).toBe(true);
-    expect(await sampleCanvasPixels(page)).toBeGreaterThan(20);
+    await expect.poll(async () => sampleCanvasPixels(page)).toBeGreaterThan(20);
 
     await page.getByTestId('btn-inspector').click();
     await page.getByTestId('btn-cycles').click();
     await expect.poll(async () => (await getDebug(page)).shellState.leftRailCollapsed).toBe(false);
-    expect(await sampleCanvasPixels(page)).toBeGreaterThan(20);
+    await expect.poll(async () => sampleCanvasPixels(page)).toBeGreaterThan(20);
   });
 });

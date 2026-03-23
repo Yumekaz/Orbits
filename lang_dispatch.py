@@ -17,6 +17,7 @@ from pathlib import Path
 
 from cache import CachedFile, ImportCache
 from crawler import SKIP_DIRS, SKIP_EXTENSIONS
+from path_utils import relative_to_root
 from worker import WorkerResult, run_worker
 
 LANG_DISPLAY = {
@@ -80,13 +81,13 @@ def _build_resolver_config(root: Path, all_node_ids: list[str]) -> dict:
     jvm_cfg = JvmProjectConfig.detect(root)
 
     return {
-        'py_src_dirs': [str(d.relative_to(root)) for d in py_cfg.src_dirs if d != root],
+        'py_src_dirs': [rel for d in py_cfg.src_dirs if d != root if (rel := relative_to_root(d, root))],
         'py_third_party': list(py_cfg.third_party),
         'py_package_name': py_cfg.package_name,
         'js_aliases': js_cfg.aliases,
         'js_base_url': js_cfg.base_url,
-        'c_include_dirs': [str(d.relative_to(root)) for d in c_cfg.include_dirs if d != root],
-        'jvm_src_roots': [str(d.relative_to(root)) for d in jvm_cfg.src_roots if d != root],
+        'c_include_dirs': [rel for d in c_cfg.include_dirs if d != root if (rel := relative_to_root(d, root))],
+        'jvm_src_roots': [rel for d in jvm_cfg.src_roots if d != root if (rel := relative_to_root(d, root))],
         'all_node_ids': all_node_ids,
     }
 
@@ -177,9 +178,8 @@ def extract_all(root: Path, verbose: bool = True) -> dict:
     nodes: dict[str, dict] = {}
     for lang, files in buckets.items():
         for filepath in files:
-            try:
-                rel = str(filepath.relative_to(root))
-            except ValueError:
+            rel = relative_to_root(filepath, root)
+            if not rel:
                 continue
             stat = filepath.stat()
             nodes[rel] = {
@@ -189,7 +189,7 @@ def extract_all(root: Path, verbose: bool = True) -> dict:
                 'language': lang,
                 'size': stat.st_size,
                 'mtime': round(stat.st_mtime),
-                'dir': str(filepath.parent.relative_to(root)) if filepath.parent != root else '.',
+                'dir': relative_to_root(filepath.parent, root) if filepath.parent != root else '.',
             }
 
     resolver_config = _build_resolver_config(root, list(nodes.keys()))
@@ -208,9 +208,8 @@ def extract_all(root: Path, verbose: bool = True) -> dict:
     cache_snapshot: dict[str, dict] = {}
     for files in buckets.values():
         for filepath in files:
-            try:
-                rel = str(filepath.relative_to(root))
-            except ValueError:
+            rel = relative_to_root(filepath, root)
+            if not rel:
                 continue
             entry = cache._data.get(rel)
             if entry:

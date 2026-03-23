@@ -1,3 +1,4 @@
+import os
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -38,6 +39,21 @@ class MultiLanguageExtractionTests(unittest.TestCase):
             raw = extract_all(root, verbose=False)
             self.assertIn(('app.ts', 'packages/shared/src/index.ts'), _normalized_edges(raw))
 
+    @unittest.skipUnless(os.name == 'nt', 'Windows path normalization regression')
+    def test_local_package_json_resolution_with_case_mismatched_root(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'packages' / 'shared' / 'src').mkdir(parents=True)
+            (root / 'packages' / 'shared' / 'package.json').write_text(
+                '{"name":"@acme/shared","exports":"./src/index.ts"}',
+                encoding='utf-8',
+            )
+            (root / 'packages' / 'shared' / 'src' / 'index.ts').write_text('export const shared = 1;\n', encoding='utf-8')
+            (root / 'app.ts').write_text("import { shared } from '@acme/shared';\n", encoding='utf-8')
+
+            raw = extract_all(Path(str(root).upper()), verbose=False)
+            self.assertIn(('app.ts', 'packages/shared/src/index.ts'), _normalized_edges(raw))
+
     def test_go_module_resolution(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -62,6 +78,22 @@ class MultiLanguageExtractionTests(unittest.TestCase):
             (root / 'src' / 'main.c').write_text('#include "lib/foo.h"\nint main(){return 0;}\n', encoding='utf-8')
 
             raw = extract_all(root, verbose=False)
+            self.assertIn(('src/main.c', 'include/lib/foo.h'), _normalized_edges(raw))
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows path normalization regression')
+    def test_c_include_resolution_from_compile_commands_with_case_mismatched_root(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'include' / 'lib').mkdir(parents=True)
+            (root / 'src').mkdir()
+            (root / 'compile_commands.json').write_text(
+                '[{"directory":"' + str(root).replace('\\', '\\\\') + '","command":"cc -Iinclude src/main.c","file":"src/main.c"}]',
+                encoding='utf-8',
+            )
+            (root / 'include' / 'lib' / 'foo.h').write_text('#pragma once\n', encoding='utf-8')
+            (root / 'src' / 'main.c').write_text('#include "lib/foo.h"\nint main(){return 0;}\n', encoding='utf-8')
+
+            raw = extract_all(Path(str(root).upper()), verbose=False)
             self.assertIn(('src/main.c', 'include/lib/foo.h'), _normalized_edges(raw))
 
     def test_cpp_include_resolution_from_cmake(self):

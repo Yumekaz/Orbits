@@ -8,6 +8,8 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from path_utils import relative_to_root
+
 
 @dataclass
 class WorkerResult:
@@ -62,7 +64,9 @@ def _run(language, file_strs, root_str, cache_data, resolver_config):
 
     for path_str in file_strs:
         filepath = Path(path_str)
-        rel = str(filepath.relative_to(root))
+        rel = relative_to_root(filepath, root)
+        if not rel:
+            continue
         try:
             stat = filepath.stat()
         except OSError:
@@ -201,10 +205,9 @@ def _make_resolver(language: str, root: Path, config: dict):
         if imp_dict.get('is_relative'):
             base = (filepath.parent / raw).resolve()
             if base.exists():
-                try:
-                    return str(base.relative_to(root)), 'LOCAL'
-                except ValueError:
-                    pass
+                rel = relative_to_root(base, root)
+                if rel:
+                    return rel, 'LOCAL'
         return None, 'UNKNOWN'
 
     return resolve_generic
