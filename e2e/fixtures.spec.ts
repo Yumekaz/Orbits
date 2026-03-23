@@ -43,6 +43,30 @@ test.describe('fixture-specific behavior', () => {
     await expect(await sampleCanvasPixels(page)).toBeGreaterThan(20);
   });
 
+  test('node runtime fixture switches edge source modes without blanking the canvas', async ({ page }) => {
+    await loadFixture(page, 'node-runtime-graph.json');
+    let debug = await getDebug(page);
+    expect(debug.graphDynamicEdgeCount).toBe(2);
+    expect(debug.edgeMode).toBe('combined');
+    expect(debug.visibleEdgeCount).toBeGreaterThanOrEqual(3);
+
+    await openMenu(page, 'btn-view');
+    await page.locator('#edge-mode-runtime').click();
+    await expect.poll(async () => (await getDebug(page)).edgeMode).toBe('runtime');
+    debug = await getDebug(page);
+    expect(debug.visibleEdgeCount).toBe(2);
+    expect(debug.visibleDynamicEdgeCount).toBe(2);
+
+    await page.locator('#edge-mode-static').click();
+    await expect.poll(async () => (await getDebug(page)).edgeMode).toBe('static');
+    debug = await getDebug(page);
+    expect(debug.visibleEdgeCount).toBe(2);
+
+    await page.locator('#edge-mode-combined').click();
+    await expect.poll(async () => (await getDebug(page)).edgeMode).toBe('combined');
+    await expect(await sampleCanvasPixels(page)).toBeGreaterThan(20);
+  });
+
   test('unsupported-language fixture shows and dismisses the warning banner', async ({ page }) => {
     await loadFixture(page, 'unsupported-lang-graph.json');
     await expect(page.getByTestId('warning-banner')).toHaveClass(/show/);
@@ -51,12 +75,12 @@ test.describe('fixture-specific behavior', () => {
     await expect(page.getByTestId('warning-banner')).not.toHaveClass(/show/);
   });
 
-  test('large graph fixture loads without crashing and enters a degraded perf state', async ({ page }) => {
+  test('large graph fixture loads without crashing and reports a perf mode', async ({ page }) => {
     const fixture = await loadFixture(page, 'large-graph.json');
     const debug = await getDebug(page);
     expect(debug.graphNodeCount).toBe((fixture as any).nodes.length);
     expect(debug.visibleNodeCount).toBeGreaterThan(0);
-    expect(debug.performanceState.motionEnabled).toBe(false);
+    expect(debug.performanceState.perfMode).toBe('auto');
     expect(await sampleCanvasPixels(page)).toBeGreaterThan(20);
     await expect(page.getByTestId('health-pill')).toBeVisible();
   });

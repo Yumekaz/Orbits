@@ -8,7 +8,7 @@ The current stack is:
 - D3 + canvas visualizer
 - browser-side worker analysis for folder loading in supported browsers
 - local HTTP serving through `analyzer.py --serve`
-- optional Python runtime tracing with merged dynamic-edge overlays
+- optional Python and Node.js runtime tracing with merged dynamic-edge overlays
 
 ## Quick Start
 
@@ -78,7 +78,7 @@ Fallback:
 2. Extract raw import/include statements.
 3. Resolve local edges against project files.
 4. Build graph metadata and summary metrics.
-5. Optionally trace a Python entrypoint at runtime and write `runtime_trace.json`.
+5. Optionally trace a Python or Node.js entrypoint at runtime and write `runtime_trace.json`.
 6. Merge dynamic runtime edges into the served/exported graph overlay.
 7. Write `graph.json`.
 8. Optionally serve the visualizer and graph assets.
@@ -122,6 +122,7 @@ Not implemented as originally claimed in older docs:
 Implemented now:
 
 - Python runtime tracing in a separate subprocess
+- Node.js runtime tracing in a separate subprocess
 - separate `runtime_trace.json` artifact
 - merged runtime edge overlay in `graph.json` via `dynamic_edges`
 - runtime-aware `view` menu edge modes: `static`, `runtime`, `combined`
@@ -130,10 +131,12 @@ Implemented now:
 
 Current scope and honest boundary:
 
-- runtime tracing is Python-only today
+- runtime tracing is shipped for Python and Node.js today
 - static graph metrics like cycles, depth, waste, and health remain static-analysis-based
 - runtime edges are an overlay, not a replacement for the static graph
 - reanalysis preserves prior runtime overlay, but marks it stale after source-changing actions until you retrace
+- Node traces are best for `.js` / `.cjs` / `.mjs` entrypoints; direct TypeScript runtime execution is still not claimed
+- runtime-to-static remapping for transpiled `dist/*.js` to `src/*.ts` is heuristic, not compiler-perfect
 
 ## Performance Reality
 
@@ -182,6 +185,15 @@ The repo expects local Python dependencies in `.venv/`.
 Optional parser support depends on installed tree-sitter language packages.
 If grammars are missing, Orbits reports unsupported languages in CLI output and graph metadata instead of silently pretending those files had no imports.
 
+Node runtime tracing uses the same overlay contract as Python:
+
+```bash
+python analyzer.py /path/to/project --trace-node app.js
+python analyzer.py /path/to/project --trace-node-module myapp.cli --trace-arg=--mode --trace-arg=dev
+```
+
+It writes a separate runtime artifact and merges into `dynamic_edges` exactly like Python.
+
 ### Frontend
 
 Install frontend dependencies once:
@@ -216,6 +228,13 @@ Trace a Python module with arguments:
 
 ```bash
 python analyzer.py /path/to/project --trace-module myapp.cli --trace-arg=--mode --trace-arg=dev
+```
+
+Trace a Node.js script or module with the same argument style:
+
+```bash
+python analyzer.py /path/to/project --trace-node app.js
+python analyzer.py /path/to/project --trace-node-module myapp.cli --trace-arg=--mode --trace-arg=dev
 ```
 
 Write the runtime artifact somewhere else:
@@ -278,7 +297,8 @@ Intentional suppressions are stored in:
 ## Key Files
 
 - `analyzer.py`: CLI entry point, HTTP serving, file actions, metadata APIs
-- `runtime_trace.py`: Python runtime tracer subprocess, artifact writer, runtime merge helpers
+- `runtime_trace.py`: Python + Node runtime trace orchestration, artifact writer, runtime merge helpers
+- `node_runtime_trace.cjs`: Node.js runtime tracer child process and artifact writer
 - `lang_dispatch.py`: crawl orchestration, worker dispatch, language support metadata
 - `worker.py`: per-language extraction and resolution execution
 - `extractors/`: tree-sitter and fallback extractors
@@ -313,6 +333,7 @@ The repo currently includes regression coverage for:
 - unsupported parser metadata
 - Python import-from resolution
 - Python runtime trace capture and merge behavior
+- Node runtime trace capture and merge behavior
 - TypeScript alias resolution
 - Go module resolution
 - C / C++ include resolution
@@ -338,6 +359,7 @@ npm run test:e2e -- --reporter=line
 - Dynamic imports, reflection, generated code, and macro-heavy systems remain hard limits for static analysis alone
 - Python runtime tracing only sees code paths that actually execute
 - Python runtime tracing is time-bounded; timed-out sessions produce partial traces
+- Node runtime tracing is contract-tested but not yet shipped as a backend tracer
 - Browser-side worker analysis is not guaranteed to match backend analysis exactly
 - Large graphs are handled more safely now, but browser and machine limits still matter
 - Git blame and file actions depend on local environment support and repository state

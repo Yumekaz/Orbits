@@ -1,0 +1,167 @@
+{
+  "nodes": [
+    {
+      "id": "src/index.js",
+      "filepath": "src/index.js",
+      "name": "index.js",
+      "dir": "src",
+      "classification": "ENTRY",
+      "language": "javascript",
+      "size": 880,
+      "mtime": 1731000001,
+      "depth": 0,
+      "island_id": -1
+    },
+    {
+      "id": "src/core.js",
+      "filepath": "src/core.js",
+      "name": "core.js",
+      "dir": "src",
+      "classification": "CONNECTED",
+      "language": "javascript",
+      "size": 630,
+      "mtime": 1731000002,
+      "depth": 1,
+      "island_id": -1
+    },
+    {
+      "id": "src/runtime.js",
+      "filepath": "src/runtime.js",
+      "name": "runtime.js",
+      "dir": "src",
+      "classification": "LEAF",
+      "language": "javascript",
+      "size": 410,
+      "mtime": 1731000003,
+      "depth": 1,
+      "island_id": -1
+    },
+    {
+      "id": "src/dynamic.js",
+      "filepath": "src/dynamic.js",
+      "name": "dynamic.js",
+      "dir": "src",
+      "classification": "LEAF",
+      "language": "javascript",
+      "size": 220,
+      "mtime": 1731000004,
+      "depth": 1,
+      "island_id": -1
+    }
+  ],
+  "edges": [
+    {
+      "source": "src/index.js",
+      "target": "src/core.js",
+      "line": 3,
+      "origins": ["static"]
+    },
+    {
+      "source": "src/core.js",
+      "target": "src/runtime.js",
+      "line": 11,
+      "origins": ["static"]
+    }
+  ],
+  "dynamic_edges": [
+    {
+      "source": "src/index.js",
+      "target": "src/core.js",
+      "line": 4,
+      "origins": ["runtime"],
+      "dynamic": false,
+      "runtime_hits": 3,
+      "runtime_modules": ["./core.js"],
+      "runtime_lines": [4]
+    },
+    {
+      "source": "src/index.js",
+      "target": "src/dynamic.js",
+      "line": 8,
+      "origins": ["runtime"],
+      "dynamic": true,
+      "runtime_hits": 2,
+      "runtime_modules": ["./dynamic.js"],
+      "runtime_lines": [8]
+    }
+  ],
+  "cycles": [],
+  "waste": [],
+  "summary": {
+    "counts": {
+      "ENTRY": 1,
+      "CONNECTED": 1,
+      "LEAF": 2
+    },
+    "total": 4,
+    "cycle_count": 0,
+    "island_count": 0,
+    "max_depth": 1,
+    "health_score": 97,
+    "unreachable": 0
+  },
+  "runtime": {
+    "entry": {
+      "mode": "module",
+      "target": "src/index.js",
+      "args": [
+        "--mode",
+        "dev"
+      ]
+    },
+    "summary": {
+      "local_edge_count": 2,
+      "local_edge_hits": 5,
+      "local_file_access_count": 1,
+      "local_file_access_hits": 1
+    },
+    "timed_out": false,
+    "elapsed_s": 0.31,
+    "exit_code": 0,
+    "error": null,
+    "file_accesses": [
+      {
+        "source": "src/index.js",
+        "path": "src/dynamic.js",
+        "count": 1,
+        "modes": ["r"],
+        "lines": [8],
+        "line": 8
+      }
+    ],
+    "artifact": "runtime_trace.json",
+    "stale": false
+  },
+  "meta": {
+    "elapsed_s": 0.19,
+    "languages": [
+      "javascript"
+    ],
+    "import_stats": {
+      "local": 2,
+      "stdlib": 0,
+      "external": 0,
+      "unknown": 0
+    },
+    "unsupported_languages": [],
+    "runtime": {
+      "enabled": true,
+      "language": "nodejs",
+      "artifact": "runtime_trace.json",
+      "entrypoint": "src/index.js",
+      "entry_mode": "module",
+      "args": [
+        "--mode",
+        "dev"
+      ],
+      "elapsed_s": 0.31,
+      "runtime_edges": 2,
+      "dynamic_edges": 1,
+      "file_accesses": 1,
+      "timed_out": false,
+      "exit_code": 0,
+      "stale": false,
+      "error": null
+    }
+  }
+}

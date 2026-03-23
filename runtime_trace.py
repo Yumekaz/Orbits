@@ -9,11 +9,13 @@ import io
 import json
 import os
 import runpy
+import shutil
+import subprocess
 import sys
 import threading
 import time
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from types import ModuleType
 from typing import Any
 
@@ -25,6 +27,16 @@ class PythonRuntimeTraceConfig:
     args: list[str] = field(default_factory=list)
     output_path: Path | None = None
     timeout_s: int = 60
+
+
+@dataclass
+class NodeRuntimeTraceConfig:
+    mode: str
+    target: str
+    args: list[str] = field(default_factory=list)
+    output_path: Path | None = None
+    timeout_s: int = 60
+    node_bin: str = 'node'
 
 
 class RuntimeTraceCollector:
@@ -471,7 +483,7 @@ def run_python_runtime_trace(root: Path, config: PythonRuntimeTraceConfig, verbo
     ]
     for arg in config.args:
         command.extend(['--arg', arg])
-    proc = __import__('subprocess').run(command, cwd=str(Path(__file__).resolve().parent), capture_output=True, text=True)
+    proc = subprocess.run(command, cwd=str(Path(__file__).resolve().parent), capture_output=True, text=True)
     if not output_path.exists():
         stderr = (proc.stderr or '').strip()
         raise RuntimeError(stderr or 'Runtime tracing failed before writing an artifact')
@@ -490,6 +502,166 @@ def run_python_runtime_trace(root: Path, config: PythonRuntimeTraceConfig, verbo
         elif payload.get('error'):
             print(f"  Runtime:   trace error recorded: {payload['error']}", file=sys.stderr)
     return payload
+
+
+def _load_runtime_payload(path: Path) -> dict[str, Any]:
+    return json.loads(path.read_text(encoding='utf-8'))
+
+
+def _patch_timed_out_payload(payload: dict[str, Any], output_path: Path, timeout_s: int, error: str) -> dict[str, Any]:
+    summary = dict(payload.get('summary', {}))
+    payload = {
+        **payload,
+        'timed_out': True,
+        'timeout_s': timeout_s,
+        'exit_code': 124,
+        'error': error,
+        'partial': False,
+        'summary': summary,
+    }
+    output_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding='utf-8')
+    return payload
+
+
+def run_node_runtime_trace(root: Path, config: NodeRuntimeTraceConfig, verbose: bool = True) -> dict[str, Any]:
+    output_path = (config.output_path or (root / 'runtime_trace.json')).resolve()
+    node_bin = config.node_bin or os.environ.get('ORBITS_NODE_BIN', 'node')
+    node_path = shutil.which(node_bin) or shutil.which(os.environ.get('ORBITS_NODE_BIN', '')) or shutil.which('node')
+    if not node_path:
+        raise RuntimeError('Node.js runtime tracing requested but no node executable was found')
+    script_path = Path(__file__).with_name('node_runtime_trace.cjs').resolve()
+    if not script_path.exists():
+        raise FileNotFoundError(f'Node runtime tracer not found: {script_path}')
+
+    entry_language = 'typescript' if Path(config.target).suffix.lower() in {'.ts', '.mts', '.cts'} else 'javascript'
+    script_type = 'auto'
+    suffix = Path(config.target).suffix.lower()
+    if suffix in {'.mjs', '.mts'}:
+        script_type = 'module'
+    elif suffix in {'.cjs', '.cts'}:
+        script_type = 'commonjs'
+
+    command = [
+        node_path,
+        str(script_path),
+        '--root', str(root.resolve()),
+        '--output', str(output_path),
+        '--mode', config.mode,
+        '--target', config.target,
+        '--timeout', str(max(0, int(config.timeout_s))),
+        '--entry-language', entry_language,
+        '--script-type', script_type,
+    ]
+    for arg in config.args:
+        command.extend(['--arg', arg])
+
+    try:
+        proc = subprocess.run(
+            command,
+            cwd=str(root.resolve()),
+            capture_output=True,
+            text=True,
+            timeout=max(5, int(config.timeout_s) + 5),
+        )
+    except subprocess.TimeoutExpired as exc:
+        if not output_path.exists():
+            raise RuntimeError(f'Node runtime tracing timed out after {config.timeout_s}s before writing an artifact') from exc
+        payload = _load_runtime_payload(output_path)
+        payload = _patch_timed_out_payload(
+            payload,
+            output_path,
+            int(config.timeout_s),
+            f'Runtime trace timed out after {config.timeout_s}s',
+        )
+        payload.setdefault('subprocess_exit_code', 124)
+        if verbose:
+            summary = payload.get('summary', {})
+            print(
+                f"  Runtime:   {summary.get('local_edge_count', 0)} dynamic edges, "
+                f"{summary.get('local_file_access_count', 0)} file accesses, exit 124",
+                file=sys.stderr,
+            )
+            print(f"  Runtime:   timed out after {config.timeout_s}s; partial trace kept", file=sys.stderr)
+        return payload
+
+    if not output_path.exists():
+        stderr = (proc.stderr or '').strip()
+        raise RuntimeError(stderr or 'Node runtime tracing failed before writing an artifact')
+
+    payload = _load_runtime_payload(output_path)
+    payload.setdefault('subprocess_exit_code', proc.returncode)
+    if proc.returncode and not payload.get('error') and proc.stderr.strip():
+        payload['error'] = proc.stderr.strip().splitlines()[-1]
+    if verbose:
+        summary = payload.get('summary', {})
+        print(
+            f"  Runtime:   {summary.get('local_edge_count', 0)} dynamic edges, "
+            f"{summary.get('local_file_access_count', 0)} file accesses, "
+            f"exit {payload.get('exit_code', proc.returncode)}",
+            file=sys.stderr,
+        )
+        if payload.get('timed_out'):
+            print(f"  Runtime:   timed out after {payload.get('timeout_s', config.timeout_s)}s; partial trace kept", file=sys.stderr)
+        elif payload.get('error'):
+            print(f"  Runtime:   trace error recorded: {payload['error']}", file=sys.stderr)
+    return payload
+
+
+def run_runtime_trace(root: Path, config: PythonRuntimeTraceConfig | NodeRuntimeTraceConfig, verbose: bool = True) -> dict[str, Any]:
+    if isinstance(config, NodeRuntimeTraceConfig):
+        return run_node_runtime_trace(root, config, verbose=verbose)
+    return run_python_runtime_trace(root, config, verbose=verbose)
+
+
+_NODE_RUNTIME_ALT_EXTENSIONS = ('.ts', '.tsx', '.mts', '.cts', '.jsx', '.js', '.mjs', '.cjs')
+_NODE_RUNTIME_BUILD_PREFIXES = ('dist', 'build', 'out', 'lib')
+
+
+def _candidate_node_runtime_ids(raw_id: str) -> list[str]:
+    normalized = str(raw_id).replace('\\', '/').lstrip('./')
+    candidates: list[str] = []
+    seen: set[str] = set()
+
+    def add(candidate: str) -> None:
+        candidate = candidate.replace('\\', '/')
+        if candidate and candidate not in seen:
+            seen.add(candidate)
+            candidates.append(candidate)
+
+    add(normalized)
+    path_obj = PurePosixPath(normalized)
+    stem = path_obj.stem
+    parent = '' if str(path_obj.parent) == '.' else str(path_obj.parent)
+    suffix = path_obj.suffix.lower()
+
+    if suffix in {'.js', '.mjs', '.cjs', '.jsx'}:
+        for ext in _NODE_RUNTIME_ALT_EXTENSIONS:
+            rel = f'{stem}{ext}' if not parent else f'{parent}/{stem}{ext}'
+            add(rel)
+
+    parts = path_obj.parts
+    if parts and parts[0] in _NODE_RUNTIME_BUILD_PREFIXES and len(parts) > 1:
+        rest = PurePosixPath(*parts[1:])
+        rest_parent = '' if str(rest.parent) == '.' else str(rest.parent)
+        for prefix in ('src', ''):
+            for ext in _NODE_RUNTIME_ALT_EXTENSIONS:
+                rel = f'{rest.stem}{ext}' if not rest_parent else f'{rest_parent}/{rest.stem}{ext}'
+                add(f'{prefix}/{rel}' if prefix else rel)
+    return candidates
+
+
+def _map_runtime_node_id(raw_id: str, node_ids: set[str], trace_language: str) -> str | None:
+    normalized = str(raw_id or '').replace('\\', '/')
+    if not normalized:
+        return None
+    if normalized in node_ids:
+        return normalized
+    if trace_language != 'nodejs':
+        return None
+    for candidate in _candidate_node_runtime_ids(normalized):
+        if candidate in node_ids:
+            return candidate
+    return None
 
 
 def merge_runtime_trace(static_graph: dict[str, Any], trace: dict[str, Any], artifact_path: Path, stale: bool = False) -> dict[str, Any]:
@@ -511,6 +683,8 @@ def merge_runtime_trace(static_graph: dict[str, Any], trace: dict[str, Any], art
         },
         'meta': dict(static_graph.get('meta', {})),
     }
+    trace_language = str(trace.get('language', 'python'))
+    trace_engine = str(trace.get('engine', trace_language))
     node_ids = {str(node.get('id', '')).replace('\\', '/') for node in merged['nodes']}
     static_pairs = {(str(edge.get('source', '')).replace('\\', '/'), str(edge.get('target', '')).replace('\\', '/')) for edge in merged['edges']}
     for edge in merged['edges']:
@@ -520,9 +694,9 @@ def merge_runtime_trace(static_graph: dict[str, Any], trace: dict[str, Any], art
         edge.setdefault('runtime_modules', [])
     dynamic_only = 0
     for item in trace.get('edges', []):
-        source = str(item.get('source', '')).replace('\\', '/')
-        target = str(item.get('target', '')).replace('\\', '/')
-        if not source or not target or source not in node_ids or target not in node_ids or source == target:
+        source = _map_runtime_node_id(item.get('source', ''), node_ids, trace_language)
+        target = _map_runtime_node_id(item.get('target', ''), node_ids, trace_language)
+        if not source or not target or source == target:
             continue
         pair = (source, target)
         dynamic = pair not in static_pairs
@@ -540,9 +714,9 @@ def merge_runtime_trace(static_graph: dict[str, Any], trace: dict[str, Any], art
             'runtime_modules': list(item.get('runtime_modules', [])),
             'runtime_lines': list(item.get('runtime_lines', [])),
         })
-    merged['meta']['runtime'] = {
-        'enabled': True,
-        'language': trace.get('language', 'python'),
+    session = {
+        'language': trace_language,
+        'engine': trace_engine,
         'artifact': str(artifact_path.resolve()),
         'entrypoint': trace.get('entry', {}).get('target', ''),
         'entry_mode': trace.get('entry', {}).get('mode', 'script'),
@@ -556,6 +730,25 @@ def merge_runtime_trace(static_graph: dict[str, Any], trace: dict[str, Any], art
         'stale': bool(stale),
         'error': trace.get('error'),
     }
+    merged['meta']['runtime'] = {
+        'enabled': True,
+        'language': trace_language,
+        'engine': trace_engine,
+        'artifact': str(artifact_path.resolve()),
+        'entrypoint': trace.get('entry', {}).get('target', ''),
+        'entry_mode': trace.get('entry', {}).get('mode', 'script'),
+        'args': list(trace.get('entry', {}).get('args', [])),
+        'elapsed_s': trace.get('elapsed_s', 0),
+        'runtime_edges': len(merged['dynamic_edges']),
+        'dynamic_edges': dynamic_only,
+        'file_accesses': len(trace.get('file_accesses', [])),
+        'timed_out': bool(trace.get('timed_out', False)),
+        'exit_code': trace.get('exit_code', 0),
+        'stale': bool(stale),
+        'error': trace.get('error'),
+        'sessions': [session],
+    }
+    merged['runtime']['sessions'] = [session]
     return merged
 
 

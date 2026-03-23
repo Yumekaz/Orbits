@@ -3,7 +3,7 @@ analyzer.py - Orbits Phase 3
 
 Multi-language dependency graph analyzer.
 Supports: Python, JavaScript, TypeScript, Go + generic fallback
-Phase 5: optional Python runtime tracing.
+Phase 5: optional Python and Node.js runtime tracing.
 
 Usage:
     python analyzer.py /path/to/project --serve
@@ -25,7 +25,12 @@ from urllib.parse import parse_qs, urlparse
 
 from graph_engine import analyze_graph
 from lang_dispatch import extract_all
-from runtime_trace import PythonRuntimeTraceConfig, merge_runtime_trace, run_python_runtime_trace
+from runtime_trace import (
+    NodeRuntimeTraceConfig,
+    PythonRuntimeTraceConfig,
+    merge_runtime_trace,
+    run_runtime_trace,
+)
 
 
 def _load_graph_payload(graph_path: Path) -> dict:
@@ -311,7 +316,7 @@ def make_server_handler(visualizer_path: Path, graph_path: Path):
 def run(
     root: str | Path,
     verbose: bool = True,
-    runtime_trace: PythonRuntimeTraceConfig | None = None,
+    runtime_trace: PythonRuntimeTraceConfig | NodeRuntimeTraceConfig | None = None,
     runtime_overlay: tuple[dict, Path] | None = None,
     runtime_stale: bool = False,
 ) -> dict:
@@ -327,7 +332,7 @@ def run(
     raw = extract_all(root_path, verbose=verbose)
 
     if runtime_trace is not None:
-        trace = run_python_runtime_trace(root_path, runtime_trace, verbose=verbose)
+        trace = run_runtime_trace(root_path, runtime_trace, verbose=verbose)
         artifact_path = (runtime_trace.output_path or (root_path / 'runtime_trace.json')).resolve()
         raw = merge_runtime_trace(raw, trace, artifact_path, stale=False)
     elif runtime_overlay is not None:
@@ -397,7 +402,7 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Supports: Python, JavaScript, TypeScript, Go + generic fallback
-Phase 5: optional Python runtime tracing
+Phase 5: optional Python and Node.js runtime tracing
 
 Examples:
   python analyzer.py .
@@ -410,9 +415,12 @@ Examples:
     trace_group = parser.add_mutually_exclusive_group()
     trace_group.add_argument('--trace-python', help='Project-relative Python entry script to execute under runtime tracing')
     trace_group.add_argument('--trace-module', help='Python module to execute under runtime tracing')
-    parser.add_argument('--trace-arg', action='append', default=[], help='Repeatable argument passed to the traced Python entry or module')
-    parser.add_argument('--trace-timeout', type=int, default=60, help='Maximum seconds to allow traced Python execution before cutting it off')
+    trace_group.add_argument('--trace-node', help='Project-relative Node.js entry script to execute under runtime tracing')
+    trace_group.add_argument('--trace-node-module', help='Node.js module specifier to execute under runtime tracing')
+    parser.add_argument('--trace-arg', action='append', default=[], help='Repeatable argument passed to the traced runtime entry or module')
+    parser.add_argument('--trace-timeout', type=int, default=60, help='Maximum seconds to allow traced runtime execution before cutting it off')
     parser.add_argument('--runtime-output', default='runtime_trace.json', help='Path for the runtime trace artifact when tracing is enabled')
+    parser.add_argument('--node-bin', default=os.environ.get('ORBITS_NODE_BIN', 'node'), help='Node executable to use for Node.js runtime tracing')
     parser.add_argument('--serve', action='store_true', help='Open visualizer in browser after analysis')
     parser.add_argument('--port', type=int, default=8765)
     args = parser.parse_args()
@@ -428,6 +436,15 @@ Examples:
             args=list(args.trace_arg or []),
             output_path=Path(args.runtime_output).resolve(),
             timeout_s=args.trace_timeout,
+        )
+    elif args.trace_node or args.trace_node_module:
+        runtime_trace = NodeRuntimeTraceConfig(
+            mode='script' if args.trace_node else 'module',
+            target=args.trace_node or args.trace_node_module,
+            args=list(args.trace_arg or []),
+            output_path=Path(args.runtime_output).resolve(),
+            timeout_s=args.trace_timeout,
+            node_bin=args.node_bin,
         )
 
     graph = run(args.path, verbose=True, runtime_trace=runtime_trace)
