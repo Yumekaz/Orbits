@@ -312,7 +312,29 @@ process.exit = function patchedExit(code = process.exitCode || 0) {
 const timeoutTimer = ARGS.timeout > 0
   ? setTimeout(() => finalize(124, `Runtime trace timed out after ${ARGS.timeout}s`, true), ARGS.timeout * 1000)
   : null;
-if (timeoutTimer) timeoutTimer.unref();
+
+function meaningfulActiveHandles() {
+  if (typeof process._getActiveHandles !== 'function') return [];
+  return process._getActiveHandles().filter((handle) => {
+    if (!handle || handle === timeoutTimer) return false;
+    if (handle === process.stdin || handle === process.stdout || handle === process.stderr) return false;
+    const name = handle.constructor?.name || '';
+    const fd = typeof handle.fd === 'number' ? handle.fd : null;
+    if ((name === 'Socket' || name === 'WriteStream' || name === 'ReadStream') && fd !== null && fd >= 0 && fd <= 2) {
+      return false;
+    }
+    return true;
+  });
+}
+
+function finalizeAfterSettledEntry() {
+  setImmediate(() => {
+    if (STATE.finalized) return;
+    if (meaningfulActiveHandles().length === 0) {
+      finalize(typeof process.exitCode === 'number' ? process.exitCode : 0, STATE.lastError, STATE.timedOut);
+    }
+  });
+}
 
 registerHooks({
   resolve(specifier, context, nextResolve) {
@@ -460,4 +482,6 @@ async function runEntry() {
 
 wrapFileAccesses();
 
-Promise.resolve(runEntry()).catch((error) => finalize(1, formatError(error), false));
+Promise.resolve(runEntry())
+  .then(finalizeAfterSettledEntry)
+  .catch((error) => finalize(1, formatError(error), false));
