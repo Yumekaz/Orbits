@@ -1,0 +1,218 @@
+{
+  "nodes": [
+    {
+      "id": "visualizer_app.js",
+      "filepath": "visualizer_app.js",
+      "name": "visualizer_app.js",
+      "dir": ".",
+      "classification": "ENTRY",
+      "language": "javascript",
+      "size": 65000,
+      "mtime": 1732000001,
+      "depth": 0,
+      "island_id": -1
+    },
+    {
+      "id": "visualizer_worker.js",
+      "filepath": "visualizer_worker.js",
+      "name": "visualizer_worker.js",
+      "dir": ".",
+      "classification": "ORPHAN",
+      "language": "javascript",
+      "size": 22000,
+      "mtime": 1732000002,
+      "depth": -1,
+      "island_id": -1
+    },
+    {
+      "id": "runtime/generated.ts",
+      "filepath": "runtime/generated.ts",
+      "name": "generated.ts",
+      "dir": "runtime",
+      "language": "typescript",
+      "size": 180,
+      "mtime": 1732000003,
+      "runtime_only": true
+    }
+  ],
+  "edges": [],
+  "dynamic_edges": [
+    {
+      "source": "visualizer_app.js",
+      "target": "runtime/generated.ts",
+      "line": 44,
+      "language": "typescript",
+      "origins": [
+        "runtime"
+      ],
+      "dynamic": true,
+      "runtime_hits": 3,
+      "runtime_modules": [
+        "./runtime/generated.ts"
+      ],
+      "runtime_lines": [
+        44
+      ],
+      "runtime_sessions": [
+        1
+      ]
+    }
+  ],
+  "cycles": [],
+  "waste": [
+    {
+      "id": "visualizer_worker.js",
+      "name": "visualizer_worker.js",
+      "classification": "ORPHAN",
+      "size": 22000,
+      "island_id": -1
+    }
+  ],
+  "summary": {
+    "counts": {
+      "ENTRY": 1,
+      "CONNECTED": 1,
+      "ORPHAN": 1
+    },
+    "total": 3,
+    "cycle_count": 0,
+    "island_count": 0,
+    "max_depth": 0,
+    "health_score": 72,
+    "unreachable": 1
+  },
+  "runtime": {
+    "entry": {
+      "mode": "module",
+      "target": "visualizer_app.js",
+      "args": []
+    },
+    "summary": {
+      "session_count": 2,
+      "local_edge_count": 1,
+      "local_edge_hits": 3,
+      "local_file_access_count": 0,
+      "local_file_access_hits": 0
+    },
+    "timed_out": false,
+    "elapsed_s": 0.73,
+    "exit_code": 0,
+    "error": null,
+    "file_accesses": [],
+    "artifact": "node_runtime_trace.json",
+    "stale": true,
+    "sessions": [
+      {
+        "language": "python",
+        "engine": "python",
+        "artifact": "python_runtime_trace.json",
+        "entrypoint": "analyzer.py",
+        "entry_mode": "script",
+        "args": [],
+        "elapsed_s": 0.42,
+        "runtime_edges": 0,
+        "dynamic_edges": 0,
+        "file_accesses": 0,
+        "timed_out": false,
+        "exit_code": 0,
+        "stale": false,
+        "error": null
+      },
+      {
+        "language": "nodejs",
+        "engine": "node",
+        "artifact": "node_runtime_trace.json",
+        "entrypoint": "visualizer_app.js",
+        "entry_mode": "module",
+        "args": [],
+        "elapsed_s": 0.31,
+        "runtime_edges": 1,
+        "dynamic_edges": 1,
+        "file_accesses": 0,
+        "timed_out": false,
+        "exit_code": 0,
+        "stale": true,
+        "error": null
+      }
+    ],
+    "languages": [
+      "nodejs",
+      "python"
+    ]
+  },
+  "meta": {
+    "elapsed_s": 0.2,
+    "languages": [
+      "javascript",
+      "typescript"
+    ],
+    "import_stats": {
+      "local": 0,
+      "stdlib": 0,
+      "external": 0,
+      "unknown": 0
+    },
+    "unsupported_languages": [],
+    "runtime": {
+      "enabled": true,
+      "language": "mixed",
+      "languages": [
+        "nodejs",
+        "python"
+      ],
+      "engine": "mixed",
+      "artifact": "node_runtime_trace.json",
+      "artifacts": [
+        "python_runtime_trace.json",
+        "node_runtime_trace.json"
+      ],
+      "entrypoint": "visualizer_app.js",
+      "entry_mode": "module",
+      "args": [],
+      "elapsed_s": 0.73,
+      "runtime_edges": 1,
+      "dynamic_edges": 1,
+      "file_accesses": 0,
+      "symbol_binding_count": 0,
+      "timed_out": false,
+      "exit_code": 0,
+      "stale": true,
+      "error": null,
+      "sessions": [
+        {
+          "language": "python",
+          "engine": "python",
+          "artifact": "python_runtime_trace.json",
+          "entrypoint": "analyzer.py",
+          "entry_mode": "script",
+          "args": [],
+          "elapsed_s": 0.42,
+          "runtime_edges": 0,
+          "dynamic_edges": 0,
+          "file_accesses": 0,
+          "timed_out": false,
+          "exit_code": 0,
+          "stale": false,
+          "error": null
+        },
+        {
+          "language": "nodejs",
+          "engine": "node",
+          "artifact": "node_runtime_trace.json",
+          "entrypoint": "visualizer_app.js",
+          "entry_mode": "module",
+          "args": [],
+          "elapsed_s": 0.31,
+          "runtime_edges": 1,
+          "dynamic_edges": 1,
+          "file_accesses": 0,
+          "timed_out": false,
+          "exit_code": 0,
+          "stale": true,
+          "error": null
+        }
+      ],
+      "session_count": 2
+    }
+  }
+}

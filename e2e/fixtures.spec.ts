@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { getDebug, loadFixture, openMenu, sampleCanvasPixels } from './helpers';
+import { clickNode, getDebug, loadFixture, openMenu, sampleCanvasPixels } from './helpers';
 
 test.describe('fixture-specific behavior', () => {
   test('cycles fixture exposes cycle panel interactions', async ({ page }) => {
@@ -65,6 +65,25 @@ test.describe('fixture-specific behavior', () => {
     await page.locator('#edge-mode-combined').click();
     await expect.poll(async () => (await getDebug(page)).edgeMode).toBe('combined');
     await expect(await sampleCanvasPixels(page)).toBeGreaterThan(20);
+  });
+
+  test('stale runtime fixture surfaces confidence context', async ({ page }) => {
+    await loadFixture(page, 'runtime-stale-waste-graph.json');
+
+    await expect(page.getByTestId('runtime-pill')).toBeVisible();
+    await expect(page.getByTestId('runtime-pill')).toContainText('Runtime stale');
+    await expect(page.getByTestId('runtime-pill')).toContainText('2 sessions');
+    await expect(page.getByTestId('warning-banner')).toContainText('Runtime trace stale');
+
+    await expect(page.locator('#waste-list')).toContainText('ORPHAN');
+    await expect(page.locator('#waste-list')).toContainText('runtime stale');
+    await page.locator('#waste-list .list-item').filter({ hasText: 'visualizer_worker.js' }).click();
+    await expect(page.locator('#imeta')).toContainText('Confidence');
+    await expect(page.locator('#imeta')).toContainText('stale');
+    await expect(page.locator('#ihistory')).toContainText('Blame');
+
+    await clickNode(page, 'runtime/generated.ts');
+    await expect(page.locator('#imeta')).toContainText('Runtime-only node');
   });
 
   test('unsupported-language fixture shows and dismisses the warning banner', async ({ page }) => {

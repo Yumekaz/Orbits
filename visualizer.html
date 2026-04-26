@@ -360,7 +360,8 @@
     }
 
     .item-info {
-      min-width: 0
+      min-width: 0;
+      flex: 1
     }
 
     .item-name {
@@ -378,6 +379,44 @@
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis
+    }
+
+    .item-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      margin-top: 6px
+    }
+
+    .item-pill {
+      font-size: 8px;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: var(--muted);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 2px 6px;
+      background: rgba(255, 255, 255, .025)
+    }
+
+    .item-pill.class {
+      color: var(--text)
+    }
+
+    .item-pill.runtime {
+      color: #ffd1eb;
+      border-color: rgba(255, 148, 212, .34);
+      background: rgba(255, 148, 212, .08)
+    }
+
+    .item-pill.stale {
+      color: var(--amber);
+      border-color: rgba(255, 170, 0, .34);
+      background: rgba(255, 170, 0, .08)
+    }
+
+    .item-pill.muted {
+      color: var(--muted)
     }
 
 
@@ -442,6 +481,20 @@
       color: var(--text);
       font-weight: 500;
       text-align: right
+    }
+
+    .v.context {
+      max-width: 170px;
+      line-height: 1.35;
+      white-space: normal
+    }
+
+    .v.warn {
+      color: var(--amber)
+    }
+
+    .v.runtime {
+      color: #ffd1eb
     }
 
     .chip-cont {
@@ -582,6 +635,78 @@
 
     #health-pill.hidden {
       display: none
+    }
+
+    #runtime-pill {
+      position: absolute;
+      bottom: 72px;
+      right: 24px;
+      max-width: min(560px, calc(100vw - 380px));
+      background: var(--panel-bg);
+      backdrop-filter: blur(8px);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 7px 12px;
+      font-size: 10px;
+      color: var(--muted);
+      z-index: 90;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis
+    }
+
+    #runtime-pill strong {
+      color: var(--text-hi);
+      flex-shrink: 0
+    }
+
+    #runtime-pill span:last-child {
+      overflow: hidden;
+      text-overflow: ellipsis
+    }
+
+    #runtime-pill.hidden {
+      display: none
+    }
+
+    #runtime-pill.fresh {
+      border-color: rgba(0, 255, 136, .28)
+    }
+
+    #runtime-pill.stale,
+    #runtime-pill.partial {
+      border-color: rgba(255, 170, 0, .42);
+      color: #d7b76f;
+      background: rgba(28, 20, 8, .78)
+    }
+
+    #runtime-pill.error {
+      border-color: rgba(255, 53, 87, .42);
+      color: #ff9bad;
+      background: rgba(30, 8, 14, .78)
+    }
+
+    .runtime-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 999px;
+      background: var(--green);
+      box-shadow: 0 0 10px rgba(0, 255, 136, .3);
+      flex: 0 0 auto
+    }
+
+    #runtime-pill.stale .runtime-dot,
+    #runtime-pill.partial .runtime-dot {
+      background: var(--amber);
+      box-shadow: 0 0 10px rgba(255, 170, 0, .3)
+    }
+
+    #runtime-pill.error .runtime-dot {
+      background: var(--red);
+      box-shadow: 0 0 10px rgba(255, 53, 87, .3)
     }
 
     #toast {
@@ -1043,6 +1168,7 @@
         <div class="warning-copy" id="warning-copy"></div><button class="warning-dismiss" data-testid="warning-dismiss"
           id="warning-dismiss">dismiss</button>
       </div>
+      <div id="runtime-pill" data-testid="runtime-pill" class="hidden"></div>
       <div id="search-box" data-testid="search-box"><input id="search-input" data-testid="search-input" type="text" placeholder="Search files...">
         <div id="search-help"><span>/ or Ctrl+K</span><span>Enter focus • Esc clear</span></div>
         <div id="search-status" style="font-size:9px;color:var(--cyan);margin-top:8px;min-height:12px"></div>
@@ -1114,6 +1240,9 @@
           </div>
           <div class="lr" style="display:flex;align-items:center;gap:10px;font-size:11px;color:var(--text);opacity:0.8">
             <div style="width:16px;height:0;border-top:2px solid #7cf7cf"></div>Static + runtime edge
+          </div>
+          <div class="lr" style="display:flex;align-items:center;gap:10px;font-size:11px;color:var(--text);opacity:0.8">
+            <div style="width:9px;height:9px;transform:rotate(45deg);background:#ff94d4"></div>Runtime-only node
           </div>
         </div>
       </div>

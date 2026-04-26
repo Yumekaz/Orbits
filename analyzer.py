@@ -8,9 +8,11 @@ Phase 5: optional Python and Node.js runtime tracing.
 Usage:
     python analyzer.py /path/to/project --serve
     python analyzer.py /path/to/project -o graph.json
+    python analyzer.py --diff old_graph.json new_graph.json
 """
 
 import argparse
+import csv
 import http.server
 import json
 import mimetypes
@@ -23,6 +25,7 @@ import webbrowser
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from graph_diff import diff_graph_files, format_graph_diff
 from graph_engine import analyze_graph
 from lang_dispatch import extract_all
 from runtime_trace import (
@@ -32,6 +35,136 @@ from runtime_trace import (
     merge_runtime_traces,
     run_runtime_trace,
 )
+
+
+CONFIG_FILENAMES = ('codegraph.config.json', '.orbits.json')
+
+
+def _as_string_list(value) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, (list, tuple)):
+        return [str(item) for item in value if isinstance(item, (str, int, float))]
+    return []
+
+
+def _merge_config(base: dict, incoming: dict) -> dict:
+    merged = dict(base)
+    for key, value in incoming.items():
+        if key in merged and isinstance(merged[key], dict) and isinstance(value, dict):
+            merged[key] = _merge_config(merged[key], value)
+        elif key in merged and isinstance(merged[key], list) and isinstance(value, list):
+            merged[key] = [*merged[key], *value]
+        else:
+            merged[key] = value
+    return merged
+
+
+def _normalize_relpath(value: str) -> str:
+    return str(value).replace('\\', '/').strip()
+
+
+def _unique_strings(values: list[str]) -> list[str]:
+    return sorted({item for item in (_normalize_relpath(value) for value in values) if item})
+
+
+def _normalize_check_thresholds(raw: dict | None) -> dict:
+    if not isinstance(raw, dict):
+        return {}
+    aliases = {
+        'max_orphans': ('max_orphans', 'maxOrphans', 'orphans'),
+        'max_islands': ('max_islands', 'maxIslands', 'islands'),
+        'min_health': ('min_health', 'minHealth', 'health'),
+    }
+    normalized = {}
+    for key, names in aliases.items():
+        for name in names:
+            if name not in raw:
+                continue
+            value = raw.get(name)
+            if value is None or value == '':
+                continue
+            try:
+                normalized[key] = int(value)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f'Invalid check threshold {name}: {value!r}') from exc
+            break
+    return normalized
+
+
+def normalize_project_config(raw: dict | None, config_files: list[str] | None = None) -> dict:
+    raw = raw if isinstance(raw, dict) else {}
+
+    ignore_dirs: list[str] = []
+    ignore_files: list[str] = []
+    ignore_common: list[str] = []
+    ignore = raw.get('ignore')
+    if isinstance(ignore, dict):
+        ignore_dirs.extend(_as_string_list(ignore.get('dirs')))
+        ignore_dirs.extend(_as_string_list(ignore.get('directories')))
+        ignore_dirs.extend(_as_string_list(ignore.get('dir_globs')))
+        ignore_files.extend(_as_string_list(ignore.get('files')))
+        ignore_files.extend(_as_string_list(ignore.get('file_globs')))
+        ignore_common.extend(_as_string_list(ignore.get('patterns')))
+        ignore_common.extend(_as_string_list(ignore.get('globs')))
+    else:
+        ignore_common.extend(_as_string_list(ignore))
+
+    ignore_dirs.extend(_as_string_list(raw.get('ignore_dirs')))
+    ignore_dirs.extend(_as_string_list(raw.get('ignoreDirectories')))
+    ignore_dirs.extend(_as_string_list(raw.get('ignore_dir_globs')))
+    ignore_files.extend(_as_string_list(raw.get('ignore_files')))
+    ignore_files.extend(_as_string_list(raw.get('ignoreFiles')))
+    ignore_files.extend(_as_string_list(raw.get('ignore_file_globs')))
+
+    intentional_files = []
+    intentional_files.extend(_as_string_list(raw.get('intentional_files')))
+    intentional_files.extend(_as_string_list(raw.get('intentionalFiles')))
+
+    check_raw = {}
+    if isinstance(raw.get('thresholds'), dict):
+        check_raw = _merge_config(check_raw, raw['thresholds'])
+    if isinstance(raw.get('check'), dict):
+        check_raw = _merge_config(check_raw, raw['check'])
+    if isinstance(raw.get('checkThresholds'), dict):
+        check_raw = _merge_config(check_raw, raw['checkThresholds'])
+
+    resolver_overrides = {}
+    for key in ('resolvers', 'resolver_overrides', 'resolverOverrides'):
+        if isinstance(raw.get(key), dict):
+            resolver_overrides = _merge_config(resolver_overrides, raw[key])
+
+    return {
+        'files': list(config_files or []),
+        'ignore': {
+            'dirs': _unique_strings([*ignore_common, *ignore_dirs]),
+            'files': _unique_strings([*ignore_common, *ignore_files]),
+        },
+        'intentional_files': _unique_strings(intentional_files),
+        'check': _normalize_check_thresholds(check_raw),
+        'resolver_overrides': resolver_overrides,
+    }
+
+
+def load_project_config(root: str | Path) -> dict:
+    root_path = Path(root).resolve()
+    merged: dict = {}
+    loaded: list[str] = []
+    for name in CONFIG_FILENAMES:
+        config_path = root_path / name
+        if not config_path.exists():
+            continue
+        try:
+            data = json.loads(config_path.read_text(encoding='utf-8'))
+        except json.JSONDecodeError as exc:
+            raise ValueError(f'Invalid JSON in {config_path}: {exc}') from exc
+        if not isinstance(data, dict):
+            raise ValueError(f'Config file must contain a JSON object: {config_path}')
+        merged = _merge_config(merged, data)
+        loaded.append(name)
+    return normalize_project_config(merged, loaded)
 
 
 def _load_graph_payload(graph_path: Path) -> dict:
@@ -347,6 +480,7 @@ def run(
     runtime_trace: PythonRuntimeTraceConfig | NodeRuntimeTraceConfig | CppRuntimeTraceConfig | None = None,
     runtime_overlays: list[tuple[dict, Path] | tuple[dict, Path, bool]] | None = None,
     runtime_stale: bool = False,
+    config: dict | None = None,
 ) -> dict:
     root_path = Path(root).resolve()
 
@@ -357,7 +491,8 @@ def run(
         print(f"ERROR: Not a directory: {root_path}", file=sys.stderr)
         sys.exit(1)
 
-    raw = extract_all(root_path, verbose=verbose)
+    project_config = config if config is not None else load_project_config(root_path)
+    raw = extract_all(root_path, verbose=verbose, config=project_config)
 
     overlays = list(runtime_overlays or [])
     if runtime_trace is not None:
@@ -404,6 +539,110 @@ def run(
     return enriched
 
 
+def _dead_file_counts(graph: dict) -> dict[str, int]:
+    waste = graph.get('waste', [])
+    orphan_count = sum(1 for item in waste if item.get('classification') == 'ORPHAN')
+    island_keys = set()
+    for item in waste:
+        if item.get('classification') != 'ISLAND':
+            continue
+        island_id = item.get('island_id', -1)
+        island_keys.add(island_id if island_id != -1 else item.get('id'))
+    return {
+        'dead_files': len(waste),
+        'orphans': orphan_count,
+        'islands': len(island_keys),
+        'health': int(graph.get('summary', {}).get('health_score', 0)),
+    }
+
+
+def _markdown_cell(value) -> str:
+    return str(value).replace('|', '\\|')
+
+
+def format_dead_report_markdown(graph: dict) -> str:
+    counts = _dead_file_counts(graph)
+    root = graph.get('meta', {}).get('root', '')
+    lines = [
+        '# Orbits Dead File Report',
+        '',
+        f'- Root: `{root}`',
+        f"- Dead files: {counts['dead_files']}",
+        f"- Orphans: {counts['orphans']}",
+        f"- Island clusters: {counts['islands']}",
+        f"- Health: {counts['health']}/100",
+        '',
+    ]
+    waste = graph.get('waste', [])
+    if not waste:
+        lines.append('No dead files found.')
+        return '\n'.join(lines) + '\n'
+
+    lines.extend([
+        '| Path | Classification | Size | Island |',
+        '| --- | --- | ---: | ---: |',
+    ])
+    for item in waste:
+        lines.append(
+            f"| `{_markdown_cell(item.get('id', ''))}` "
+            f"| {_markdown_cell(item.get('classification', ''))} "
+            f"| {int(item.get('size', 0) or 0)} "
+            f"| {item.get('island_id', -1)} |"
+        )
+    return '\n'.join(lines) + '\n'
+
+
+def write_dead_report_markdown(graph: dict, output: str | Path) -> None:
+    content = format_dead_report_markdown(graph)
+    if str(output) == '-':
+        sys.stdout.write(content)
+        return
+    path = Path(output).resolve()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding='utf-8')
+
+
+def write_dead_report_csv(graph: dict, output: str | Path) -> None:
+    fieldnames = ['id', 'name', 'classification', 'size', 'island_id']
+    if str(output) == '-':
+        writer = csv.DictWriter(sys.stdout, fieldnames=fieldnames, extrasaction='ignore', lineterminator='\n')
+        writer.writeheader()
+        writer.writerows(graph.get('waste', []))
+        return
+    path = Path(output).resolve()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open('w', encoding='utf-8', newline='') as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames, extrasaction='ignore', lineterminator='\n')
+        writer.writeheader()
+        writer.writerows(graph.get('waste', []))
+
+
+def _check_thresholds_from_args(config: dict, args) -> dict:
+    thresholds = dict(config.get('check', {}) if isinstance(config, dict) else {})
+    if args.max_orphans is not None:
+        thresholds['max_orphans'] = args.max_orphans
+    if args.max_islands is not None:
+        thresholds['max_islands'] = args.max_islands
+    if args.min_health is not None:
+        thresholds['min_health'] = args.min_health
+    return thresholds
+
+
+def evaluate_check_thresholds(graph: dict, thresholds: dict) -> list[str]:
+    counts = _dead_file_counts(graph)
+    failures: list[str] = []
+    max_orphans = thresholds.get('max_orphans')
+    if max_orphans is not None and counts['orphans'] > int(max_orphans):
+        failures.append(f"orphans {counts['orphans']} > {int(max_orphans)}")
+    max_islands = thresholds.get('max_islands')
+    if max_islands is not None and counts['islands'] > int(max_islands):
+        failures.append(f"islands {counts['islands']} > {int(max_islands)}")
+    min_health = thresholds.get('min_health')
+    if min_health is not None and counts['health'] < int(min_health):
+        failures.append(f"health {counts['health']} < {int(min_health)}")
+    return failures
+
+
 def serve(output_path: Path, port: int = 8765):
     viz = Path(__file__).with_name('visualizer.html')
     if not viz.exists():
@@ -438,10 +677,14 @@ Examples:
   python analyzer.py .
   python analyzer.py ~/projects/myapp --serve
   python analyzer.py ~/projects/myapp -o graph.json --serve
+  python analyzer.py --diff old_graph.json new_graph.json
         """,
     )
-    parser.add_argument('path', help='Project root directory')
+    parser.add_argument('path', nargs='?', help='Project root directory')
     parser.add_argument('-o', '--output', default='graph.json')
+    parser.add_argument('--diff', nargs=2, metavar=('BASELINE', 'CURRENT'), help='Compare two existing Orbits graph JSON files')
+    parser.add_argument('--diff-json', action='store_true', help='Print dependency diff as JSON instead of text')
+    parser.add_argument('--diff-limit', type=int, default=20, help='Maximum diff items to show per section in text mode')
     trace_group = parser.add_mutually_exclusive_group()
     trace_group.add_argument('--trace-python', help='Project-relative Python entry script to execute under runtime tracing')
     trace_group.add_argument('--trace-module', help='Python module to execute under runtime tracing')
@@ -453,12 +696,36 @@ Examples:
     parser.add_argument('--runtime-output', default='runtime_trace.json', help='Path for the runtime trace artifact when tracing is enabled')
     parser.add_argument('--runtime-input', action='append', default=[], help='Existing runtime trace artifact to merge; repeat to include multiple trace sessions')
     parser.add_argument('--node-bin', default=os.environ.get('ORBITS_NODE_BIN', 'node'), help='Node executable to use for Node.js runtime tracing')
+    parser.add_argument('--dead-report-md', help='Write a Markdown report of actionable dead files to this path; use - for stdout')
+    parser.add_argument('--dead-report-csv', help='Write a CSV report of actionable dead files to this path; use - for stdout')
+    parser.add_argument('--check', action='store_true', help='Exit nonzero when configured or flag-provided thresholds are exceeded')
+    parser.add_argument('--max-orphans', type=int, help='Check threshold: maximum actionable orphan files')
+    parser.add_argument('--max-islands', type=int, help='Check threshold: maximum actionable island clusters')
+    parser.add_argument('--min-health', type=int, help='Check threshold: minimum graph health score')
     parser.add_argument('--serve', action='store_true', help='Open visualizer in browser after analysis')
     parser.add_argument('--port', type=int, default=8765)
     args = parser.parse_args()
 
+    if args.diff:
+        diff = diff_graph_files(args.diff[0], args.diff[1])
+        if args.diff_json:
+            print(json.dumps(diff, indent=2))
+        else:
+            print(format_graph_diff(diff, limit=max(0, args.diff_limit)))
+        return
+
+    if not args.path:
+        parser.error('path is required unless --diff is used')
+
     print('\nOrbits - Phase 5', file=sys.stderr)
     print(f"{'-' * 40}", file=sys.stderr)
+
+    root_path = Path(args.path).resolve()
+    try:
+        project_config = load_project_config(root_path)
+    except ValueError as exc:
+        print(f'ERROR: {exc}', file=sys.stderr)
+        sys.exit(1)
 
     runtime_trace = None
     if args.trace_python or args.trace_module:
@@ -494,7 +761,7 @@ Examples:
             sys.exit(1)
         runtime_overlays.append((*loaded, False))
 
-    graph = run(args.path, verbose=True, runtime_trace=runtime_trace, runtime_overlays=runtime_overlays)
+    graph = run(root_path, verbose=True, runtime_trace=runtime_trace, runtime_overlays=runtime_overlays, config=project_config)
     output_path = Path(args.output).resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(graph, indent=2, ensure_ascii=False), encoding='utf-8')
@@ -515,8 +782,25 @@ Examples:
         if runtime_meta.get('session_count', 1) > 1:
             print(f"  Runtime:   {runtime_meta.get('session_count')} sessions merged", file=sys.stderr)
         print(f"  Runtime:   {runtime_meta.get('artifact')}", file=sys.stderr)
+    if args.dead_report_md:
+        write_dead_report_markdown(graph, args.dead_report_md)
+        print(f"  Report MD: {args.dead_report_md}", file=sys.stderr)
+    if args.dead_report_csv:
+        write_dead_report_csv(graph, args.dead_report_csv)
+        print(f"  Report CSV: {args.dead_report_csv}", file=sys.stderr)
     print(f"  Output:    {output_path}", file=sys.stderr)
     print(f"{'-' * 40}\n", file=sys.stderr)
+
+    if args.check:
+        thresholds = _check_thresholds_from_args(project_config, args)
+        failures = evaluate_check_thresholds(graph, thresholds)
+        if failures:
+            print('  Check:     FAIL', file=sys.stderr)
+            for failure in failures:
+                print(f'  - {failure}', file=sys.stderr)
+            sys.exit(2)
+        suffix = '' if thresholds else ' (no thresholds configured)'
+        print(f'  Check:     PASS{suffix}', file=sys.stderr)
 
     if args.serve:
         serve(output_path, args.port)

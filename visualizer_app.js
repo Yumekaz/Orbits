@@ -145,14 +145,54 @@
   function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
   function formatSize(bytes) { if (!bytes) return '0 B'; if (bytes < 1024) return `${bytes} B`; if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`; return `${(bytes / 1048576).toFixed(1)} MB`; }
   function formatDate(ts) { if (!ts) return '—'; const d = new Date(ts * 1000); return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString(); }
+  function formatShortDate(ts) { if (!ts) return 'unknown'; const d = new Date(ts * 1000); return Number.isNaN(d.getTime()) ? 'unknown' : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }); }
+  function formatDuration(seconds) {
+    const value = Number(seconds);
+    if (!Number.isFinite(value) || value <= 0) return '';
+    const fixed = value < 10 ? value.toFixed(2) : value.toFixed(1);
+    return `${fixed.replace(/\.?0+$/, '')}s`;
+  }
+  function formatRuntimeLang(lang) {
+    return ({ nodejs: 'Node', python: 'Python', cpp: 'C/C++', mixed: 'Mixed' })[(lang || '').toLowerCase()] || displayLang(lang);
+  }
+  function nodeClass(node) { return node.classification || (node.runtime_only ? 'CONNECTED' : 'CONNECTED'); }
+  function getRuntimeMeta() { return APP.graph?.meta?.runtime || {}; }
+  function runtimeSessions() {
+    const meta = getRuntimeMeta();
+    if (Array.isArray(meta.sessions) && meta.sessions.length) return meta.sessions;
+    if (Array.isArray(APP.graph?.runtime?.sessions) && APP.graph.runtime.sessions.length) return APP.graph.runtime.sessions;
+    return meta.enabled ? [meta] : [];
+  }
+  function runtimeStatus(meta = getRuntimeMeta()) {
+    if (!meta.enabled) return null;
+    if (meta.error) return { key: 'error', label: 'Runtime error' };
+    if (meta.timed_out) return { key: 'partial', label: 'Runtime partial' };
+    if (meta.stale) return { key: 'stale', label: 'Runtime stale' };
+    return { key: 'fresh', label: 'Runtime fresh' };
+  }
+  function runtimeSummaryParts(meta = getRuntimeMeta()) {
+    if (!meta.enabled) return [];
+    const sessions = runtimeSessions();
+    const sessionCount = Number(meta.session_count || sessions.length || 1);
+    const languages = Array.isArray(meta.languages) && meta.languages.length ? meta.languages : (meta.language ? [meta.language] : []);
+    const latest = sessions[sessions.length - 1] || meta;
+    const parts = [];
+    if (sessionCount) parts.push(`${sessionCount} session${sessionCount === 1 ? '' : 's'}`);
+    if (languages.length) parts.push(languages.map(formatRuntimeLang).join('/'));
+    if (Number(meta.dynamic_edges || 0) || Number(meta.runtime_edges || 0)) parts.push(`${Number(meta.dynamic_edges || 0)} dynamic / ${Number(meta.runtime_edges || 0)} seen`);
+    const duration = formatDuration(latest.elapsed_s || meta.elapsed_s);
+    if (duration) parts.push(`last run ${duration}`);
+    if (meta.file_accesses) parts.push(`${meta.file_accesses} file touch${Number(meta.file_accesses) === 1 ? '' : 'es'}`);
+    return parts;
+  }
   function setEquals(a, b) { if (a.size !== b.size) return false; for (const item of a) if (!b.has(item)) return false; return true; }
   function getCanvasSize() { return { width: ELS.canvasWrap.clientWidth || 1000, height: ELS.canvasWrap.clientHeight || 800 }; }
   function cacheKey(hash, mode) { return `orbits.layout.${hash}.${mode}`; }
   function currentLanguageSet() { return APP.state.activeLangs === null ? APP.indexes?.allLanguages || new Set() : APP.state.activeLangs; }
-  function nodeVisible(node) { return APP.state.visibleClasses.has(node.classification) && (!node.language || currentLanguageSet().has(node.language)); }
+  function nodeVisible(node) { return APP.state.visibleClasses.has(nodeClass(node)) && (!node.language || currentLanguageSet().has(node.language)); }
 
   function captureElements() {
-    ['graph-canvas', 'canvas-wrap', 'minimap', 'drop-overlay', 'search-box', 'search-input', 'search-status', 'warning-banner', 'warning-copy', 'worker-status', 'worker-message', 'health-pill', 'elapsed', 'perf-mode', 'toast', 'btn-waste', 'btn-cycles', 'btn-insp', 'btn-cluster', 'btn-labels', 'btn-filter', 'btn-lang', 'btn-search', 'btn-reset', 'btn-folder', 'btn-open', 'btn-cycle-highlight', 'btn-focus', 'btn-full', 'btn-perf', 'layout-menu', 'layout-force', 'layout-cluster', 'layout-radial', 'edge-mode-static', 'edge-mode-runtime', 'edge-mode-combined', 'lang-menu', 'lang-chip-grid', 'filter-panel', 'filter-chip-grid', 'waste-list', 'waste-badge', 'cycle-list', 'cycle-badge', 'left-rail', 'inspector', 'ip', 'ic', 'iname', 'imeta', 'ihistory', 'icycle', 'iout', 'iin', 'file-input', 'warning-dismiss', 'lang-all', 'lang-none', 'filter-all', 'filter-waste', 'filter-default', 's-files', 's-edges', 's-orphans', 's-cycles', 's-health', 's-unreachable', 's-max-depth', 's-resolved', 's-langs'].forEach((id) => { ELS[id] = $(id); });
+    ['graph-canvas', 'canvas-wrap', 'minimap', 'drop-overlay', 'search-box', 'search-input', 'search-status', 'warning-banner', 'warning-copy', 'worker-status', 'worker-message', 'runtime-pill', 'health-pill', 'elapsed', 'perf-mode', 'toast', 'btn-waste', 'btn-cycles', 'btn-insp', 'btn-cluster', 'btn-labels', 'btn-filter', 'btn-lang', 'btn-search', 'btn-reset', 'btn-folder', 'btn-open', 'btn-cycle-highlight', 'btn-focus', 'btn-full', 'btn-perf', 'layout-menu', 'layout-force', 'layout-cluster', 'layout-radial', 'edge-mode-static', 'edge-mode-runtime', 'edge-mode-combined', 'lang-menu', 'lang-chip-grid', 'filter-panel', 'filter-chip-grid', 'waste-list', 'waste-badge', 'cycle-list', 'cycle-badge', 'left-rail', 'inspector', 'ip', 'ic', 'iname', 'imeta', 'ihistory', 'icycle', 'iout', 'iin', 'file-input', 'warning-dismiss', 'lang-all', 'lang-none', 'filter-all', 'filter-waste', 'filter-default', 's-files', 's-edges', 's-orphans', 's-cycles', 's-health', 's-unreachable', 's-max-depth', 's-resolved', 's-langs'].forEach((id) => { ELS[id] = $(id); });
     ELS.canvasWrap = $('canvas-wrap');
     APP.canvas = ELS['graph-canvas'];
     APP.ctx = APP.canvas.getContext('2d');
@@ -334,14 +374,14 @@
     const searchByNode = new Map();
 
     graph.nodes.forEach((node) => {
-      const normalized = { ...node, id: normalizeId(node.id), filepath: normalizeId(node.filepath || node.id), dir: node.dir || dirname(node.id) };
+      const normalized = { ...node, id: normalizeId(node.id), filepath: normalizeId(node.filepath || node.id), dir: node.dir || dirname(node.id), classification: nodeClass(node), depth: Number.isFinite(node.depth) ? node.depth : -1, island_id: Number.isFinite(node.island_id) ? node.island_id : -1 };
       nodeById.set(normalized.id, normalized);
       if (normalized.language) {
         if (!nodesByLanguage.has(normalized.language)) nodesByLanguage.set(normalized.language, new Set());
         nodesByLanguage.get(normalized.language).add(normalized.id);
       }
-      if (!nodesByClass.has(normalized.classification)) nodesByClass.set(normalized.classification, new Set());
-      nodesByClass.get(normalized.classification).add(normalized.id);
+      if (!nodesByClass.has(nodeClass(normalized))) nodesByClass.set(nodeClass(normalized), new Set());
+      nodesByClass.get(nodeClass(normalized)).add(normalized.id);
       searchByNode.set(normalized.id, getSearchTokens(normalized));
     });
 
@@ -366,8 +406,8 @@
       const degree = outbound + inbound;
       const cycleBoost = cycleMembershipByNode.has(id) ? 3 : 0;
       const depthBoost = node.depth >= 0 ? Math.max(0, 6 - Math.min(node.depth, 6)) : 0;
-      const entryBoost = node.classification === 'ENTRY' ? 5 : 0;
-      const leafPenalty = node.classification === 'LEAF' ? -1.5 : 0;
+      const entryBoost = nodeClass(node) === 'ENTRY' ? 5 : 0;
+      const leafPenalty = nodeClass(node) === 'LEAF' ? -1.5 : 0;
       node.importance = degree * 1.6 + cycleBoost + depthBoost + entryBoost + leafPenalty;
     });
 
@@ -399,7 +439,7 @@
   function setGraphData(data, options = {}) {
     APP.graph = {
       ...data,
-      nodes: (data.nodes || []).map((node) => ({ ...node, id: normalizeId(node.id), filepath: normalizeId(node.filepath || node.id), dir: node.dir || dirname(node.id), name: node.name || basename(node.id) })),
+      nodes: (data.nodes || []).map((node) => ({ ...node, id: normalizeId(node.id), filepath: normalizeId(node.filepath || node.id), dir: node.dir || dirname(node.id), name: node.name || basename(node.id), classification: nodeClass(node), depth: Number.isFinite(node.depth) ? node.depth : -1, island_id: Number.isFinite(node.island_id) ? node.island_id : -1 })),
       edges: (data.edges || []).map((edge) => ({ ...edge, source: normalizeId(edge.source.id || edge.source), target: normalizeId(edge.target.id || edge.target), line: edge.line || null })),
       dynamic_edges: (data.dynamic_edges || []).map((edge) => ({ ...edge, source: normalizeId(edge.source.id || edge.source), target: normalizeId(edge.target.id || edge.target), line: edge.line || null })),
       cycles: (data.cycles || []).map((cycle) => cycle.map(normalizeId)),
@@ -456,8 +496,9 @@
       }
     } catch { }
     APP.workerRequestId += 1;
+    const layoutEdges = APP.graph.dynamic_edges.length ? APP.indexes.combinedEdges : APP.indexes.edges;
     showWorkerStatus('Laying out graph…', 12);
-    ensureWorker().postMessage({ type: 'layoutGraph', payload: { requestId: APP.workerRequestId, width, height, layoutMode: APP.state.layoutMode, nodes: APP.graph.nodes.map((node) => ({ id: node.id, dir: node.dir, classification: node.classification, depth: node.depth, importance: node.importance || 0 })), edges: APP.indexes.edges.map((edge) => ({ source: edge.source, target: edge.target })), cachedPositions } });
+    ensureWorker().postMessage({ type: 'layoutGraph', payload: { requestId: APP.workerRequestId, width, height, layoutMode: APP.state.layoutMode, nodes: APP.graph.nodes.map((node) => ({ id: node.id, dir: node.dir, classification: nodeClass(node), depth: node.depth, importance: node.importance || 0 })), edges: layoutEdges.map((edge) => ({ source: edge.source, target: edge.target })), cachedPositions } });
   }
 
   function stopSimulation() {
@@ -507,7 +548,7 @@
       .velocityDecay(0.34)
       .force('link', d3.forceLink(simEdges).id((node) => node.id).distance(linkDistance).strength(linkStrength))
       .force('charge', d3.forceManyBody().strength(charge).distanceMax(520))
-      .force('collide', d3.forceCollide((node) => node.classification === 'ENTRY' ? 22 : 15).iterations(2))
+      .force('collide', d3.forceCollide((node) => nodeClass(node) === 'ENTRY' ? 22 : 15).iterations(2))
       .force('x', d3.forceX((node) => APP.anchorPositions.get(node.id)?.x ?? node.x).strength(anchorStrength))
       .force('y', d3.forceY((node) => APP.anchorPositions.get(node.id)?.y ?? node.y).strength(anchorStrength))
       .on('tick', () => {
@@ -683,7 +724,7 @@
     let score = node.importance || 0;
     if (node.id === selectedId) score += 1000;
     if (searchTree?.has(node.id)) score += 500;
-    if (node.classification === 'ENTRY') score += 120;
+    if (nodeClass(node) === 'ENTRY') score += 120;
     if (APP.indexes.cycleMembershipByNode.has(node.id)) score += 90;
     return score;
   }
@@ -752,9 +793,9 @@
     if (hugeGraph && !APP.state.showFullGraph && !APP.state.searchQuery && !APP.state.selectedId) {
       if (zoomK < 0.38) {
         clusterOnly = true;
-        workingNodes = workingNodes.filter((node) => node.importance >= 4 || node.classification === 'ENTRY' || APP.indexes.cycleMembershipByNode.has(node.id));
+        workingNodes = workingNodes.filter((node) => node.importance >= 4 || nodeClass(node) === 'ENTRY' || APP.indexes.cycleMembershipByNode.has(node.id));
       } else if (zoomK < 0.82) {
-        workingNodes = workingNodes.filter((node) => node.importance >= 2.8 || node.classification !== 'LEAF' || APP.indexes.cycleMembershipByNode.has(node.id));
+        workingNodes = workingNodes.filter((node) => node.importance >= 2.8 || nodeClass(node) !== 'LEAF' || APP.indexes.cycleMembershipByNode.has(node.id));
       }
     }
     const workingIds = new Set(workingNodes.map((node) => node.id));
@@ -895,9 +936,10 @@
       const pos = APP.layoutPositions.get(node.id);
       if (!pos) return;
       const screen = toScreen(pos.x, pos.y);
-      const theme = getTheme(node.classification);
-      const radius = node.classification === 'ENTRY' ? 10 : 7;
-      const halo = node.classification === 'ENTRY' ? 13 : 9;
+      const classification = nodeClass(node);
+      const theme = getTheme(classification);
+      const radius = classification === 'ENTRY' ? 10 : 7;
+      const halo = classification === 'ENTRY' ? 13 : 9;
       const opacity = nodeOpacity(node, model);
       APP.ctx.globalAlpha = opacity;
       APP.ctx.beginPath();
@@ -916,6 +958,21 @@
       APP.ctx.strokeStyle = APP.indexes.cycleMembershipByNode.has(node.id) ? 'rgba(255,170,0,.95)' : theme.stroke;
       APP.ctx.lineWidth = node.id === APP.state.selectedId ? 2.2 : APP.state.highlightCycles && APP.indexes.cycleMembershipByNode.has(node.id) ? 2 : 1.3;
       APP.ctx.stroke();
+      if (node.runtime_only) {
+        const mx = screen.x + radius * .78;
+        const my = screen.y - radius * .78;
+        APP.ctx.beginPath();
+        APP.ctx.moveTo(mx, my - 4);
+        APP.ctx.lineTo(mx + 4, my);
+        APP.ctx.lineTo(mx, my + 4);
+        APP.ctx.lineTo(mx - 4, my);
+        APP.ctx.closePath();
+        APP.ctx.fillStyle = 'rgba(255,148,212,.96)';
+        APP.ctx.fill();
+        APP.ctx.strokeStyle = 'rgba(6,11,24,.95)';
+        APP.ctx.lineWidth = 1;
+        APP.ctx.stroke();
+      }
     });
     APP.ctx.restore();
   }
@@ -926,7 +983,7 @@
     if (APP.state.searchQuery && model.searchTree?.has(node.id)) return true;
     if (model.zoomK > 1.45) return true;
     if (model.renderNodes.length < 120 && node.importance >= 2.5) return true;
-    return node.classification === 'ENTRY' || APP.indexes.cycleMembershipByNode.has(node.id);
+    return nodeClass(node) === 'ENTRY' || APP.indexes.cycleMembershipByNode.has(node.id);
   }
 
   function drawLabels(model) {
@@ -992,9 +1049,9 @@
     minimapNodes.forEach((node) => {
       const pos = APP.layoutPositions.get(node.id);
       if (!pos) return;
-      ctx.fillStyle = getTheme(node.classification).stroke;
+      ctx.fillStyle = getTheme(nodeClass(node)).stroke;
       ctx.beginPath();
-      ctx.arc(mapX(pos.x), mapY(pos.y), node.classification === 'ENTRY' ? 3 : 2, 0, Math.PI * 2);
+      ctx.arc(mapX(pos.x), mapY(pos.y), nodeClass(node) === 'ENTRY' ? 3 : 2, 0, Math.PI * 2);
       ctx.fill();
     });
     const { width, height } = getCanvasSize();
@@ -1075,7 +1132,7 @@
     const totalImports = Object.values(imp).reduce((sum, value) => sum + value, 0);
     const resolvedPct = totalImports ? Math.round(((imp.local || 0) / totalImports) * 100) : 0;
     const edgeBundle = activeEdgeBundle();
-    const runtimeMeta = APP.graph.meta?.runtime || {};
+    const runtimeMeta = getRuntimeMeta();
     ELS['s-files'].textContent = APP.graph.nodes.length;
     ELS['s-edges'].textContent = edgeBundle.edges.length;
     ELS['s-orphans'].textContent = (APP.graph.waste || []).length;
@@ -1088,15 +1145,27 @@
     ELS['s-resolved'].style.color = resolvedPct > 80 ? 'var(--green)' : resolvedPct > 50 ? 'var(--amber)' : 'var(--red)';
     ELS['health-pill'].querySelector('span').textContent = s.health_score ?? '—';
     ELS['health-pill'].classList.remove('hidden');
-    const runtimeParts = [];
-    if (runtimeMeta.enabled) {
-      runtimeParts.push(`Runtime ${runtimeMeta.dynamic_edges || 0} dyn`);
-      if ((runtimeMeta.session_count || 0) > 1) runtimeParts.push(`${runtimeMeta.session_count} sessions`);
-      if ((runtimeMeta.languages || []).length > 1) runtimeParts.push(runtimeMeta.languages.join('/'));
-    }
+    const status = runtimeStatus(runtimeMeta);
+    const runtimeParts = status ? [status.label, ...runtimeSummaryParts(runtimeMeta)] : [];
     const runtimeSuffix = runtimeParts.length ? ` • ${runtimeParts.join(' • ')}` : '';
     ELS['elapsed'].textContent = APP.graph.meta?.elapsed_s ? `Analysed in ${APP.graph.meta.elapsed_s}s${runtimeSuffix}` : runtimeSuffix.replace(/^ • /, '');
+    updateRuntimePill();
     updatePerformanceControls();
+  }
+
+  function updateRuntimePill() {
+    const meta = getRuntimeMeta();
+    const pill = ELS['runtime-pill'];
+    const status = runtimeStatus(meta);
+    if (!status) {
+      pill.className = 'hidden';
+      pill.textContent = '';
+      return;
+    }
+    const parts = runtimeSummaryParts(meta);
+    pill.className = `runtime-pill ${status.key}`;
+    pill.innerHTML = `<span class="runtime-dot"></span><strong>${escapeHtml(status.label)}</strong>${parts.length ? `<span>${escapeHtml(parts.join(' • '))}</span>` : ''}`;
+    pill.title = [status.label, ...parts].join(' • ');
   }
 
 
@@ -1116,9 +1185,44 @@
 
 
 
+  function runtimeNodeEdges(nodeId) {
+    const bundle = APP.indexes?.edgeSets?.runtime;
+    const inEdges = bundle?.inboundByNode.get(nodeId) || [];
+    const outEdges = bundle?.outboundByNode.get(nodeId) || [];
+    const hits = [...inEdges, ...outEdges].reduce((sum, edge) => sum + Number(edge.runtime_hits || 0), 0);
+    return { inEdges, outEdges, hits, total: inEdges.length + outEdges.length };
+  }
+
+  function nodeConfidenceContext(node) {
+    const meta = getRuntimeMeta();
+    const runtime = runtimeNodeEdges(node.id);
+    if (node.runtime_only) return 'Runtime-only node; static graph did not include it.';
+    if (!meta.enabled) return 'Static classification only; no runtime overlay loaded.';
+    if (meta.stale) return 'Runtime overlay is stale; re-run tracing before acting on this.';
+    if (runtime.total) return `Runtime touched this file (${runtime.outEdges.length} out / ${runtime.inEdges.length} in${runtime.hits ? `, ${runtime.hits} hits` : ''}).`;
+    if (['ORPHAN', 'ISLAND'].includes(nodeClass(node))) return 'No runtime edges observed for this waste candidate.';
+    return 'Static graph evidence; runtime overlay has no edge for this node.';
+  }
+
+  function wasteMetaPills(node) {
+    const meta = getRuntimeMeta();
+    const runtime = runtimeNodeEdges(node.id);
+    const pills = [
+      `<span class="item-pill class">${escapeHtml(nodeClass(node))}</span>`,
+      `<span class="item-pill muted">modified ${escapeHtml(formatShortDate(node.mtime))}</span>`
+    ];
+    if (node.runtime_only) pills.push('<span class="item-pill runtime">runtime-only</span>');
+    if (meta.enabled) {
+      if (meta.stale) pills.push('<span class="item-pill stale">runtime stale</span>');
+      else if (runtime.total) pills.push('<span class="item-pill runtime">runtime touched</span>');
+      else pills.push('<span class="item-pill muted">no runtime hits</span>');
+    }
+    return pills.join('');
+  }
+
   function itemRow(node, color) {
     const id = escapeHtml(normalizeId(node.id));
-    return `<div class="list-item" data-id="${id}"><div class="item-dot" style="background:${color}"></div><div class="item-info"><div class="item-name">${escapeHtml(basename(node.id))}</div><div class="item-path">${escapeHtml(dirname(node.id))}</div></div><div class="item-actions"><button class="item-btn" data-open="${id}">open</button><button class="item-btn" data-intentional="${id}">keep</button><button class="item-btn" data-delete="${id}">del</button></div></div>`;
+    return `<div class="list-item" data-id="${id}"><div class="item-dot" style="background:${color}"></div><div class="item-info"><div class="item-name">${escapeHtml(basename(node.id))}</div><div class="item-path">${escapeHtml(dirname(node.id))}</div><div class="item-meta">${wasteMetaPills(node)}</div></div><div class="item-actions"><button class="item-btn" data-open="${id}">open</button><button class="item-btn" data-intentional="${id}">keep</button><button class="item-btn" data-delete="${id}">del</button></div></div>`;
   }
 
   function bindRowClicks(container) {
@@ -1138,8 +1242,8 @@
     ELS['waste-badge'].className = `badge${waste.length === 0 ? ' ok' : ''}`;
     if (!waste.length) { ELS['waste-list'].innerHTML = '<div style="padding:40px;text-align:center;color:var(--green);font-size:11px">✓ Clean codebase</div>'; return; }
     let html = '';
-    const islands = waste.filter((item) => item.classification === 'ISLAND');
-    const orphans = waste.filter((item) => item.classification === 'ORPHAN');
+    const islands = waste.filter((item) => nodeClass(item) === 'ISLAND');
+    const orphans = waste.filter((item) => nodeClass(item) === 'ORPHAN');
     if (islands.length) {
       const groups = {};
       islands.forEach((item) => { const key = item.island_id >= 0 ? item.island_id : 'x'; (groups[key] = groups[key] || []).push(item); });
@@ -1194,14 +1298,19 @@
     const edgeBundle = activeEdgeBundle();
     const inEdges = edgeBundle.inboundByNode.get(node.id) || [];
     const outEdges = edgeBundle.outboundByNode.get(node.id) || [];
-    const runtimeOut = outEdges.filter((edge) => edge.runtime).length;
-    const runtimeIn = inEdges.filter((edge) => edge.runtime).length;
+    const runtime = runtimeNodeEdges(node.id);
+    const runtimeMeta = getRuntimeMeta();
+    const status = runtimeStatus(runtimeMeta);
+    const classification = nodeClass(node);
     ELS.ip.style.display = 'none';
     ELS.ic.style.display = 'block';
     ELS.iname.textContent = normalizeId(node.filepath || node.id);
     const island = node.island_id >= 0 ? `<span class="v" style="color:var(--purple)">Cluster ${node.island_id + 1}</span>` : '<span class="v">—</span>';
-    const runtimeRow = APP.graph.dynamic_edges?.length ? `<div class="kv-row"><span class="k">Runtime</span><span class="v">${runtimeOut} out / ${runtimeIn} in</span></div>` : '';
-    ELS.imeta.innerHTML = `<div class="kv-row"><span class="k">Class</span><span class="v" style="color:${getTheme(node.classification).stroke}">${escapeHtml(node.classification)}</span></div><div class="kv-row"><span class="k">Size</span><span class="v">${formatSize(node.size)}</span></div><div class="kv-row"><span class="k">Inbound</span><span class="v">${inEdges.length}</span></div><div class="kv-row"><span class="k">Outbound</span><span class="v">${outEdges.length}</span></div><div class="kv-row"><span class="k">Language</span><span class="v" style="color:${getLangColor(node.language)}">${escapeHtml(node.language || '—')}</span></div><div class="kv-row"><span class="k">Depth</span><span class="v">${node.depth >= 0 ? node.depth : '∞'}</span></div><div class="kv-row"><span class="k">Island</span>${island}</div>${runtimeRow}<div class="kv-row"><span class="k">Modified</span><span class="v">${formatDate(node.mtime)}</span></div>`;
+    const runtimeRow = runtimeMeta.enabled ? `<div class="kv-row"><span class="k">Runtime</span><span class="v context">${runtime.outEdges.length} out / ${runtime.inEdges.length} in${runtime.hits ? ` / ${runtime.hits} hits` : ''}</span></div>` : '';
+    const traceRow = status ? `<div class="kv-row"><span class="k">Trace</span><span class="v context ${status.key === 'fresh' ? '' : 'warn'}">${escapeHtml([status.label, ...runtimeSummaryParts(runtimeMeta).slice(0, 2)].join(' • '))}</span></div>` : '';
+    const originRow = node.runtime_only ? '<div class="kv-row"><span class="k">Origin</span><span class="v context runtime">Runtime-only node</span></div>' : '';
+    const confidence = nodeConfidenceContext(node);
+    ELS.imeta.innerHTML = `<div class="kv-row"><span class="k">Class</span><span class="v" style="color:${getTheme(classification).stroke}">${escapeHtml(classification)}</span></div>${originRow}<div class="kv-row"><span class="k">Size</span><span class="v">${formatSize(node.size)}</span></div><div class="kv-row"><span class="k">Inbound</span><span class="v">${inEdges.length}</span></div><div class="kv-row"><span class="k">Outbound</span><span class="v">${outEdges.length}</span></div><div class="kv-row"><span class="k">Language</span><span class="v" style="color:${getLangColor(node.language)}">${escapeHtml(node.language || '—')}</span></div><div class="kv-row"><span class="k">Depth</span><span class="v">${node.depth >= 0 ? node.depth : '∞'}</span></div><div class="kv-row"><span class="k">Island</span>${island}</div>${runtimeRow}${traceRow}<div class="kv-row"><span class="k">Modified</span><span class="v context">${formatDate(node.mtime)}</span></div><div class="kv-row"><span class="k">Confidence</span><span class="v context ${runtimeMeta.stale || node.runtime_only ? 'warn' : ''}">${escapeHtml(confidence)}</span></div>`;
     const cycles = APP.indexes.cycleMembershipByNode.get(node.id) || [];
     ELS.icycle.innerHTML = cycles.length ? cycles.map((entry) => `<div class="chip-cont"><div style="font-size:9px;color:var(--amber);letter-spacing:.12em;text-transform:uppercase">Cycle ${entry.index + 1}</div><div class="cycle-path">${entry.path.map((id, idx) => `${idx ? '<span class="cycle-arrow">→</span>' : ''}<span class="chip cycle" data-focus="${escapeHtml(id)}">${escapeHtml(basename(id))}</span>`).join('')}</div></div>`).join('') : '<div style="color:var(--dim);font-size:10px">This node is not part of a cycle.</div>';
     ELS.icycle.querySelectorAll('[data-focus]').forEach((chip) => chip.addEventListener('click', () => focusNode(chip.dataset.focus)));
@@ -1209,8 +1318,12 @@
     renderChips(ELS.iin, inEdges, 'in');
     ELS.ihistory.innerHTML = '<div style="color:var(--dim);font-size:10px">Loading git history…</div>';
     fetchNodeInfo(node.id).then((info) => {
-      ELS.ihistory.innerHTML = `<div class="kv-row"><span class="k">Modified</span><span class="v">${escapeHtml(info.mtime_iso ? new Date(info.mtime_iso).toLocaleString() : formatDate(node.mtime))}</span></div><div style="margin-top:8px;font-size:10px;line-height:1.6;color:var(--text)"><span style="color:var(--muted);text-transform:uppercase;letter-spacing:.12em">Blame</span><br>${escapeHtml(info.blame?.summary || 'Unavailable')}</div>`;
+      if (APP.state.selectedId !== node.id) return;
+      const modified = info.mtime_iso ? new Date(info.mtime_iso).toLocaleString() : formatDate(node.mtime);
+      const blame = info.blame?.summary || 'Unavailable';
+      ELS.ihistory.innerHTML = `<div class="kv-row"><span class="k">Modified</span><span class="v context">${escapeHtml(modified)}</span></div><div class="kv-row"><span class="k">Blame</span><span class="v context">${escapeHtml(blame)}</span></div>`;
     }).catch((err) => {
+      if (APP.state.selectedId !== node.id) return;
       ELS.ihistory.innerHTML = `<div style="color:var(--dim);font-size:10px">${escapeHtml(err.message)}</div>`;
     });
     syncActiveListRows();
@@ -1412,7 +1525,7 @@
     APP.renderModel.renderNodes.forEach((node) => {
       const pos = APP.layoutPositions.get(node.id);
       if (!pos) return;
-      const r = (node.classification === 'ENTRY' ? 10 : 7) + 6 / t.k;
+      const r = (nodeClass(node) === 'ENTRY' ? 10 : 7) + 6 / t.k;
       const dx = worldX - pos.x;
       const dy = worldY - pos.y;
       const dist = Math.sqrt(dx * dx + dy * dy);

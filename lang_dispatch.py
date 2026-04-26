@@ -12,6 +12,7 @@ Entry point: extract_all(root) -> raw graph dict
 import os
 import sys
 import time
+from fnmatch import fnmatch
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
@@ -48,19 +49,61 @@ EXT_TO_LANG = {
 }
 
 
-def crawl_all(root: Path) -> dict[str, list[Path]]:
+def _as_list(value) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, (list, tuple)):
+        return [str(item) for item in value if isinstance(item, (str, int, float))]
+    return []
+
+
+def _matches_glob(relpath: str, basename: str, patterns: list[str]) -> bool:
+    rel = relpath.replace('\\', '/').strip('/')
+    candidates = {rel, f'{rel}/', basename}
+    return any(fnmatch(candidate, pattern) for pattern in patterns for candidate in candidates)
+
+
+def _ignored_dir(dirname: str, relpath: str, patterns: list[str]) -> bool:
+    return bool(patterns) and _matches_glob(relpath, dirname, patterns)
+
+
+def _ignored_file(filename: str, relpath: str, patterns: list[str]) -> bool:
+    return bool(patterns) and _matches_glob(relpath, filename, patterns)
+
+
+def _config_ignore(config: dict | None) -> tuple[list[str], list[str]]:
+    ignore = config.get('ignore', {}) if isinstance(config, dict) else {}
+    if not isinstance(ignore, dict):
+        return [], []
+    dirs = [pattern.replace('\\', '/') for pattern in _as_list(ignore.get('dirs')) if pattern]
+    files = [pattern.replace('\\', '/') for pattern in _as_list(ignore.get('files')) if pattern]
+    return dirs, files
+
+
+def crawl_all(root: Path, config: dict | None = None) -> dict[str, list[Path]]:
     buckets: dict[str, list[Path]] = {}
+    ignore_dirs, ignore_files = _config_ignore(config)
 
     for dirpath, dirnames, filenames in os.walk(root, topdown=True):
-        dirnames[:] = sorted([
-            d for d in dirnames
-            if d not in SKIP_DIRS and not d.startswith('.') and not d.endswith('.egg-info')
-        ])
+        kept_dirs = []
+        for dirname in dirnames:
+            dir_rel = relative_to_root(Path(dirpath) / dirname, root) or dirname
+            if dirname in SKIP_DIRS or dirname.startswith('.') or dirname.endswith('.egg-info'):
+                continue
+            if _ignored_dir(dirname, dir_rel, ignore_dirs):
+                continue
+            kept_dirs.append(dirname)
+        dirnames[:] = sorted(kept_dirs)
         for filename in filenames:
             if filename.startswith('.'):
                 continue
             filepath = Path(dirpath) / filename
             if filepath.suffix in SKIP_EXTENSIONS:
+                continue
+            rel = relative_to_root(filepath, root)
+            if not rel or _ignored_file(filename, rel, ignore_files):
                 continue
             lang = EXT_TO_LANG.get(filepath.suffix.lower())
             if lang:
@@ -69,7 +112,30 @@ def crawl_all(root: Path) -> dict[str, list[Path]]:
     return buckets
 
 
-def _build_resolver_config(root: Path, all_node_ids: list[str]) -> dict:
+def _rel_list(root: Path, values) -> list[str]:
+    result = []
+    for value in _as_list(values):
+        raw = value.replace('\\', '/').strip()
+        if not raw:
+            continue
+        path = Path(raw)
+        if path.is_absolute():
+            rel = relative_to_root(path, root)
+            result.append(rel if rel else raw)
+        else:
+            result.append(raw.strip('/'))
+    return result
+
+
+def _resolver_section(overrides: dict, *names: str) -> dict:
+    for name in names:
+        section = overrides.get(name)
+        if isinstance(section, dict):
+            return section
+    return {}
+
+
+def _build_resolver_config(root: Path, all_node_ids: list[str], config: dict | None = None) -> dict:
     from resolver import ProjectConfig
     from resolvers.c_family_resolver import CProjectConfig
     from resolvers.js_resolver import JsProjectConfig
@@ -80,14 +146,49 @@ def _build_resolver_config(root: Path, all_node_ids: list[str]) -> dict:
     c_cfg = CProjectConfig.detect(root)
     jvm_cfg = JvmProjectConfig.detect(root)
 
+    resolver_overrides = config.get('resolver_overrides', {}) if isinstance(config, dict) else {}
+    if not isinstance(resolver_overrides, dict):
+        resolver_overrides = {}
+
+    py_override = _resolver_section(resolver_overrides, 'python', 'py')
+    js_override = _resolver_section(resolver_overrides, 'javascript', 'js', 'typescript', 'ts')
+    c_override = _resolver_section(resolver_overrides, 'c_family', 'c', 'cpp', 'cxx')
+    jvm_override = _resolver_section(resolver_overrides, 'jvm', 'java', 'kotlin')
+
+    py_src_dirs = [rel for d in py_cfg.src_dirs if d != root if (rel := relative_to_root(d, root))]
+    if 'src_dirs' in py_override:
+        py_src_dirs = _rel_list(root, py_override.get('src_dirs'))
+    py_third_party = list(py_cfg.third_party)
+    if 'third_party' in py_override:
+        py_third_party = _as_list(py_override.get('third_party'))
+    py_package_name = py_cfg.package_name
+    if 'package_name' in py_override:
+        py_package_name = str(py_override.get('package_name') or '')
+
+    js_aliases = js_cfg.aliases
+    if isinstance(js_override.get('aliases'), dict):
+        js_aliases = dict(js_override.get('aliases'))
+    js_base_url = js_cfg.base_url
+    if 'base_url' in js_override:
+        js_base_url = str(js_override.get('base_url') or '')
+
+    c_include_dirs = [rel for d in c_cfg.include_dirs if d != root if (rel := relative_to_root(d, root))]
+    if 'include_dirs' in c_override:
+        c_include_dirs = _rel_list(root, c_override.get('include_dirs'))
+
+    jvm_src_roots = [rel for d in jvm_cfg.src_roots if d != root if (rel := relative_to_root(d, root))]
+    if 'src_roots' in jvm_override:
+        jvm_src_roots = _rel_list(root, jvm_override.get('src_roots'))
+
     return {
-        'py_src_dirs': [rel for d in py_cfg.src_dirs if d != root if (rel := relative_to_root(d, root))],
-        'py_third_party': list(py_cfg.third_party),
-        'py_package_name': py_cfg.package_name,
-        'js_aliases': js_cfg.aliases,
-        'js_base_url': js_cfg.base_url,
-        'c_include_dirs': [rel for d in c_cfg.include_dirs if d != root if (rel := relative_to_root(d, root))],
-        'jvm_src_roots': [rel for d in jvm_cfg.src_roots if d != root if (rel := relative_to_root(d, root))],
+        'py_src_dirs': py_src_dirs,
+        'py_third_party': py_third_party,
+        'py_package_name': py_package_name,
+        'js_aliases': js_aliases,
+        'js_base_url': js_base_url,
+        'c_include_dirs': c_include_dirs,
+        'jvm_src_roots': jvm_src_roots,
+        'resolver_overrides': resolver_overrides,
         'all_node_ids': all_node_ids,
     }
 
@@ -134,23 +235,30 @@ def _detect_language_support() -> dict[str, dict[str, str | bool]]:
 
 
 
-def _load_intentional_files(root: Path) -> list[str]:
+def _load_intentional_files(root: Path, config: dict | None = None) -> list[str]:
+    configured = []
+    if isinstance(config, dict):
+        configured = [
+            item.replace('\\', '/')
+            for item in _as_list(config.get('intentional_files'))
+            if item
+        ]
     marker = root / '.orbits_intentional.json'
     if not marker.exists():
-        return []
+        return sorted(set(configured))
     try:
         import json
         data = json.loads(marker.read_text(encoding='utf-8'))
     except Exception:
-        return []
+        return sorted(set(configured))
     files = data.get('intentional_files', []) if isinstance(data, dict) else []
-    return sorted({str(item).replace('\\', '/') for item in files if isinstance(item, str)})
+    return sorted({*configured, *(str(item).replace('\\', '/') for item in files if isinstance(item, str))})
 
 def _run_sequential_workers(buckets, root_str, cache_snapshot, resolver_config):
     return [run_worker(lang, [str(f) for f in files], root_str, cache_snapshot, resolver_config) for lang, files in buckets.items()]
 
 
-def extract_all(root: Path, verbose: bool = True) -> dict:
+def extract_all(root: Path, verbose: bool = True, config: dict | None = None) -> dict:
     t_start = time.time()
 
     def log(message: str):
@@ -159,7 +267,7 @@ def extract_all(root: Path, verbose: bool = True) -> dict:
 
     log(f"  Scanning:  {root}")
 
-    buckets = crawl_all(root)
+    buckets = crawl_all(root, config=config)
     total_files = sum(len(files) for files in buckets.values())
     language_support = _detect_language_support()
 
@@ -192,7 +300,7 @@ def extract_all(root: Path, verbose: bool = True) -> dict:
                 'dir': relative_to_root(filepath.parent, root) if filepath.parent != root else '.',
             }
 
-    resolver_config = _build_resolver_config(root, list(nodes.keys()))
+    resolver_config = _build_resolver_config(root, list(nodes.keys()), config=config)
 
     if resolver_config.get('py_package_name'):
         log(f"  Package:   {resolver_config['py_package_name']}")
@@ -276,7 +384,7 @@ def extract_all(root: Path, verbose: bool = True) -> dict:
         if not status['available'] and buckets.get(lang)
     ]
 
-    intentional_files = _load_intentional_files(root)
+    intentional_files = _load_intentional_files(root, config=config)
 
     total_imports = sum(total_stats.values())
     pct = round(total_stats['local'] / total_imports * 100, 1) if total_imports else 0.0
@@ -311,5 +419,11 @@ def extract_all(root: Path, verbose: bool = True) -> dict:
             'language_support': language_support,
             'unsupported_languages': unsupported_languages,
             'intentional_files': intentional_files,
+            'config': {
+                'files': list(config.get('files', [])) if isinstance(config, dict) else [],
+                'ignore': dict(config.get('ignore', {})) if isinstance(config, dict) else {},
+                'check': dict(config.get('check', {})) if isinstance(config, dict) else {},
+                'resolver_overrides': dict(config.get('resolver_overrides', {})) if isinstance(config, dict) else {},
+            },
         },
     }

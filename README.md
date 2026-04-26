@@ -290,6 +290,70 @@ Write output somewhere else and still serve correctly:
 python analyzer.py /path/to/project -o C:/temp/my-graph.json --serve
 ```
 
+Compare two graph snapshots:
+
+```bash
+python analyzer.py --diff C:/temp/old-graph.json C:/temp/new-graph.json
+python analyzer.py --diff C:/temp/old-graph.json C:/temp/new-graph.json --diff-json
+```
+
+The diff reports added and removed nodes, added and removed dependency edges, and waste count changes. Edge comparison uses `source -> target`, so line-number-only import churn does not count as a dependency change.
+
+### Config, Reports, and Check Mode
+
+Orbits reads optional project-root config from `codegraph.config.json` and `.orbits.json`.
+If both exist, `codegraph.config.json` is loaded first and `.orbits.json` can extend or override it.
+
+```json
+{
+  "ignore": {
+    "dirs": ["legacy/**", "generated/**"],
+    "files": ["*.snapshot.py", "fixtures/*.js"]
+  },
+  "intentional_files": ["scripts/manual_migration.py"],
+  "check": {
+    "max_orphans": 0,
+    "max_islands": 0,
+    "min_health": 85
+  },
+  "resolvers": {
+    "python": {
+      "src_dirs": ["src"],
+      "third_party": ["requests"]
+    },
+    "javascript": {
+      "base_url": "src",
+      "aliases": {
+        "@/*": "src/*"
+      }
+    },
+    "c_family": {
+      "include_dirs": ["include"]
+    },
+    "jvm": {
+      "src_roots": ["src/main/java", "src/main/kotlin"]
+    }
+  }
+}
+```
+
+Write explicit dead-file reports:
+
+```bash
+python analyzer.py /path/to/project --dead-report-md dead-files.md --dead-report-csv dead-files.csv
+```
+
+Run a deterministic CI-style check:
+
+```bash
+python analyzer.py /path/to/project --check
+python analyzer.py /path/to/project --check --max-orphans 0 --max-islands 1 --min-health 90
+```
+
+`--check` exits with code `2` when a configured or flag-provided threshold is exceeded.
+Orphan and island thresholds use actionable dead files after `intentional_files` suppressions.
+Health uses the graph summary score.
+
 Load a graph directly in the browser UI:
 
 - open the served visualizer
@@ -335,6 +399,7 @@ Waste panel supports:
 Intentional suppressions are stored in:
 
 - `.orbits_intentional.json`
+- `intentional_files` in `codegraph.config.json` or `.orbits.json`
 
 ## Key Files
 
@@ -346,6 +411,7 @@ Intentional suppressions are stored in:
 - `extractors/`: tree-sitter and fallback extractors
 - `resolvers/`: language-specific resolution logic
 - `graph_engine.py`: enrichment, waste detection, summary metrics
+- `graph_diff.py`: graph snapshot comparison helper and standalone diff CLI
 - `visualizer.html`: bundled shell/UI
 - `visualizer_app.js`: active D3 + canvas visualizer logic
 - `visualizer_worker.js`: browser-side worker analysis and layout
@@ -382,6 +448,7 @@ The repo currently includes regression coverage for:
 - C / C++ include resolution
 - Java and Kotlin package resolution
 - end-to-end graph shape
+- graph dependency diff summaries
 - synthetic benchmark graph generation
 - Playwright Stage 1 browser coverage for the visualizer, including runtime edge mode switching
 
