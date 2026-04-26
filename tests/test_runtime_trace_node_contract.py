@@ -430,6 +430,58 @@ class NodeRuntimeTraceContractTests(unittest.TestCase):
             self.assertIn('src/server.ts', _source_map_candidates('dist/server.js', root))
             self.assertIn('src/custom.ts', _source_map_candidates('dist/custom.js', root))
 
+    def test_source_map_candidates_accept_charset_and_url_encoded_data_urls(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'src').mkdir()
+            (root / 'dist').mkdir()
+            (root / 'src' / 'server.ts').write_text('export const server = 1;\n', encoding='utf-8')
+            (root / 'src' / 'plain.ts').write_text('export const plain = 2;\n', encoding='utf-8')
+
+            charset_map = base64.b64encode(json.dumps({
+                'version': 3,
+                'file': 'server.js',
+                'sources': ['../src/server.ts'],
+            }).encode('utf-8')).decode('ascii')
+            encoded_map = json.dumps({
+                'version': 3,
+                'file': 'plain.js',
+                'sources': ['../src/plain.ts'],
+            }).replace(' ', '%20').replace('"', '%22').replace('{', '%7B').replace('}', '%7D').replace('[', '%5B').replace(']', '%5D').replace(':', '%3A').replace(',', '%2C').replace('/', '%2F')
+            (root / 'dist' / 'server.js').write_text(
+                f'console.log("server");\n//# sourceMappingURL=data:application/json;charset=utf-8;base64,{charset_map}\n',
+                encoding='utf-8',
+            )
+            (root / 'dist' / 'plain.js').write_text(
+                f'console.log("plain");\n//# sourceMappingURL=data:application/json,{encoded_map}\n',
+                encoding='utf-8',
+            )
+
+            self.assertIn('src/server.ts', _source_map_candidates('dist/server.js', root))
+            self.assertIn('src/plain.ts', _source_map_candidates('dist/plain.js', root))
+
+    def test_source_map_candidates_honor_section_source_roots(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'src').mkdir()
+            (root / 'dist').mkdir()
+            (root / 'src' / 'section.ts').write_text('export const section = 1;\n', encoding='utf-8')
+            (root / 'dist' / 'bundle.js.map').write_text(json.dumps({
+                'version': 3,
+                'sections': [
+                    {
+                        'offset': {'line': 0, 'column': 0},
+                        'map': {
+                            'version': 3,
+                            'sourceRoot': '../src',
+                            'sources': ['section.ts'],
+                        },
+                    },
+                ],
+            }), encoding='utf-8')
+
+            self.assertIn('src/section.ts', _source_map_candidates('dist/bundle.js', root))
+
     def test_source_map_candidates_handle_webpack_and_repo_absolute_sources(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)

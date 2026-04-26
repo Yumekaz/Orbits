@@ -447,7 +447,7 @@ Examples:
     trace_group.add_argument('--trace-module', help='Python module to execute under runtime tracing')
     trace_group.add_argument('--trace-node', help='Project-relative Node.js entry script to execute under runtime tracing')
     trace_group.add_argument('--trace-node-module', help='Node.js module specifier to execute under runtime tracing')
-    trace_group.add_argument('--trace-cpp', help='Project-relative native executable to execute under runtime tracing (Linux/macOS only)')
+    trace_group.add_argument('--trace-cpp', help='Project-relative native executable to execute under scoped native runtime tracing')
     parser.add_argument('--trace-arg', action='append', default=[], help='Repeatable argument passed to the traced runtime entry or module')
     parser.add_argument('--trace-timeout', type=int, default=60, help='Maximum seconds to allow traced runtime execution before cutting it off')
     parser.add_argument('--runtime-output', default='runtime_trace.json', help='Path for the runtime trace artifact when tracing is enabled')

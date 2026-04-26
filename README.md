@@ -156,8 +156,8 @@ Current scope and honest boundary:
 - runtime edges are an overlay, not a replacement for the static graph
 - reanalysis preserves prior runtime overlay, but marks it stale after source-changing actions until you retrace
 - Node traces are best for `.js` / `.cjs` / `.mjs` entrypoints; direct TypeScript runtime execution is still not claimed
-- runtime-to-static remapping for transpiled `dist/*.js` to `src/*.ts` now uses source maps, inline maps, custom `sourceMappingURL` files, and common bundler path forms when available, but is still not compiler-perfect
-- C / C++ tracing is still intentionally scoped: Linux now captures loader edges plus local symbol bindings, macOS stays loader-oriented, and Windows native tracing is still not claimed
+- runtime-to-static remapping for transpiled `dist/*.js` to `src/*.ts` now uses source maps, inline maps, custom `sourceMappingURL` files, indexed source-map sections, source roots, and common bundler path forms when available, but is still not compiler-perfect
+- C / C++ tracing is still intentionally scoped: Linux captures loader edges plus local symbol bindings, macOS stays loader-oriented, and Windows captures local PE import-table DLL dependencies
 
 ## Performance Reality
 
@@ -227,7 +227,7 @@ Scoped native tracing is also available for local C / C++ binaries on supported 
 python analyzer.py /path/to/project --trace-cpp build/my_binary
 ```
 
-On Linux this captures local loader edges and symbol bindings via loader diagnostics. On macOS it captures local loader edges. Windows native tracing is still intentionally out of scope.
+On Linux this captures local loader edges and symbol bindings via loader diagnostics. On macOS it captures local loader edges. On Windows it executes the entry binary normally and adds scoped local DLL dependency edges from the executable's PE import table. Windows tracing is loader/dependency oriented; it does not claim deep native tracing, syscall tracing, or universal `LoadLibrary` discovery.
 
 ### Frontend
 
@@ -402,7 +402,7 @@ npm run test:e2e -- --reporter=line
 - Dynamic imports, reflection, generated code, and macro-heavy systems remain hard limits for static analysis alone
 - Python runtime tracing only sees code paths that actually execute
 - Python runtime tracing is time-bounded; timed-out sessions produce partial traces
-- Node runtime tracing is contract-tested but not yet shipped as a backend tracer
+- Node runtime tracing is shipped as a backend tracer for JavaScript entrypoints
 - Browser-side worker analysis is not guaranteed to match backend analysis exactly
 - Large graphs are handled more safely now, but browser and machine limits still matter
 - Git blame and file actions depend on local environment support and repository state

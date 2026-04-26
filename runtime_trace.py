@@ -12,6 +12,7 @@ import os
 import re
 import runpy
 import shutil
+import struct
 import subprocess
 import sys
 import threading
@@ -20,7 +21,7 @@ from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from types import ModuleType
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import unquote, unquote_to_bytes, urlparse
 from urllib.request import url2pathname
 
 from path_utils import relative_to_root
@@ -696,9 +697,208 @@ def _parse_macos_loader_edges(stderr: str, root: Path, entry_rel: str) -> list[d
     ]
 
 
+def _u16(data: bytes, offset: int) -> int:
+    if offset < 0 or offset + 2 > len(data):
+        raise ValueError('Truncated PE header')
+    return struct.unpack_from('<H', data, offset)[0]
+
+
+def _u32(data: bytes, offset: int) -> int:
+    if offset < 0 or offset + 4 > len(data):
+        raise ValueError('Truncated PE header')
+    return struct.unpack_from('<I', data, offset)[0]
+
+
+def _read_c_string(data: bytes, offset: int) -> str | None:
+    if offset < 0 or offset >= len(data):
+        return None
+    end = data.find(b'\0', offset)
+    if end == -1:
+        return None
+    raw = data[offset:end]
+    if not raw:
+        return None
+    try:
+        return raw.decode('ascii', errors='replace')
+    except Exception:
+        return None
+
+
+def _pe_rva_to_offset(rva: int, sections: list[dict[str, int]], data_len: int) -> int | None:
+    for section in sections:
+        start = section['virtual_address']
+        size = max(section['virtual_size'], section['raw_size'])
+        if start <= rva < start + size:
+            raw_offset = section['raw_pointer'] + (rva - start)
+            return raw_offset if 0 <= raw_offset < data_len else None
+    return rva if 0 <= rva < data_len else None
+
+
+def _parse_windows_pe_imports(binary_path: Path) -> list[str]:
+    data = binary_path.read_bytes()
+    if len(data) < 0x40 or data[:2] != b'MZ':
+        raise ValueError(f'Not a Windows PE binary: {binary_path}')
+
+    pe_offset = _u32(data, 0x3C)
+    if pe_offset + 24 > len(data) or data[pe_offset:pe_offset + 4] != b'PE\0\0':
+        raise ValueError(f'Not a Windows PE binary: {binary_path}')
+
+    coff_offset = pe_offset + 4
+    section_count = _u16(data, coff_offset + 2)
+    optional_size = _u16(data, coff_offset + 16)
+    optional_offset = coff_offset + 20
+    section_offset = optional_offset + optional_size
+    if optional_offset + optional_size > len(data):
+        raise ValueError(f'Truncated PE optional header: {binary_path}')
+
+    magic = _u16(data, optional_offset)
+    if magic == 0x10B:
+        data_directory_offset = optional_offset + 96
+    elif magic == 0x20B:
+        data_directory_offset = optional_offset + 112
+    else:
+        raise ValueError(f'Unsupported PE optional header: {binary_path}')
+
+    sections: list[dict[str, int]] = []
+    for index in range(section_count):
+        offset = section_offset + index * 40
+        if offset + 40 > len(data):
+            break
+        sections.append({
+            'virtual_size': _u32(data, offset + 8),
+            'virtual_address': _u32(data, offset + 12),
+            'raw_size': _u32(data, offset + 16),
+            'raw_pointer': _u32(data, offset + 20),
+        })
+
+    def directory(index: int) -> tuple[int, int]:
+        offset = data_directory_offset + index * 8
+        if offset + 8 > optional_offset + optional_size or offset + 8 > len(data):
+            return 0, 0
+        return _u32(data, offset), _u32(data, offset + 4)
+
+    imports: list[str] = []
+    seen: set[str] = set()
+
+    def add_import(name: str | None) -> None:
+        if not name:
+            return
+        normalized = name.strip()
+        key = normalized.lower()
+        if normalized and key not in seen:
+            seen.add(key)
+            imports.append(normalized)
+
+    def parse_import_directory(rva: int) -> None:
+        offset = _pe_rva_to_offset(rva, sections, len(data))
+        if offset is None:
+            return
+        for descriptor_offset in range(offset, len(data), 20):
+            if descriptor_offset + 20 > len(data):
+                return
+            descriptor = data[descriptor_offset:descriptor_offset + 20]
+            if descriptor == b'\0' * 20:
+                return
+            name_rva = _u32(data, descriptor_offset + 12)
+            name_offset = _pe_rva_to_offset(name_rva, sections, len(data))
+            add_import(_read_c_string(data, name_offset) if name_offset is not None else None)
+
+    def parse_delay_import_directory(rva: int) -> None:
+        offset = _pe_rva_to_offset(rva, sections, len(data))
+        if offset is None:
+            return
+        for descriptor_offset in range(offset, len(data), 32):
+            if descriptor_offset + 32 > len(data):
+                return
+            descriptor = data[descriptor_offset:descriptor_offset + 32]
+            if descriptor == b'\0' * 32:
+                return
+            name_rva = _u32(data, descriptor_offset + 4)
+            name_offset = _pe_rva_to_offset(name_rva, sections, len(data))
+            add_import(_read_c_string(data, name_offset) if name_offset is not None else None)
+
+    import_rva, _import_size = directory(1)
+    if import_rva:
+        parse_import_directory(import_rva)
+    delay_import_rva, _delay_import_size = directory(13)
+    if delay_import_rva:
+        parse_delay_import_directory(delay_import_rva)
+    return imports
+
+
+def _find_local_windows_dll(root: Path, source_binary: Path, dll_name: str) -> Path | None:
+    dll_key = dll_name.lower()
+    candidates = [
+        source_binary.parent / dll_name,
+        root / dll_name,
+        root / 'bin' / dll_name,
+        root / 'lib' / dll_name,
+        root / 'plugins' / dll_name,
+        root / 'build' / dll_name,
+    ]
+    for candidate in candidates:
+        if candidate.exists() and candidate.is_file() and candidate.name.lower() == dll_key:
+            return candidate.resolve()
+
+    skip_dirs = {'.git', '.venv', 'node_modules', '__pycache__', '.pytest_cache', '.mypy_cache'}
+    stack = [root.resolve()]
+    while stack:
+        current = stack.pop()
+        try:
+            entries = list(current.iterdir())
+        except OSError:
+            continue
+        for entry in entries:
+            if entry.is_dir():
+                if entry.name not in skip_dirs:
+                    stack.append(entry)
+            elif entry.is_file() and entry.name.lower() == dll_key:
+                return entry.resolve()
+    return None
+
+
+def _parse_windows_loader_edges(root: Path, executable: Path, entry_rel: str) -> tuple[list[dict[str, Any]], str | None]:
+    edges: dict[tuple[str, str], dict[str, Any]] = {}
+    error: str | None = None
+    queue: list[tuple[Path, str]] = [(executable.resolve(), entry_rel)]
+    seen: set[str] = set()
+
+    while queue:
+        binary, source_rel = queue.pop(0)
+        binary_key = str(binary).lower()
+        if binary_key in seen:
+            continue
+        seen.add(binary_key)
+        try:
+            imported_dlls = _parse_windows_pe_imports(binary)
+        except Exception as exc:
+            if binary == executable.resolve():
+                error = f'{type(exc).__name__}: {exc}'
+            continue
+        for dll_name in imported_dlls:
+            target = _find_local_windows_dll(root, binary, dll_name)
+            if not target:
+                continue
+            target_rel = relative_to_root(target, root)
+            if not target_rel or target_rel == source_rel or not _is_local_cpp_artifact(target_rel, entry_rel):
+                continue
+            _record_cpp_runtime_edge(edges, source_rel, target_rel, 'runtime_load')
+            queue.append((target, target_rel))
+
+    return _finalize_cpp_runtime_edges(edges), error
+
+
+def _parse_cpp_loader_edges(engine: str, stderr: str, root: Path, executable: Path, entry_rel: str) -> tuple[list[dict[str, Any]], str | None]:
+    if engine.startswith('ld_debug'):
+        return _parse_linux_loader_edges(stderr, root, entry_rel), None
+    if engine == 'dyld':
+        return _parse_macos_loader_edges(stderr, root, entry_rel), None
+    if engine == 'pe_import_table':
+        return _parse_windows_loader_edges(root, executable, entry_rel)
+    return [], f'C/C++ runtime tracing is not supported by engine: {engine}'
+
+
 def run_cpp_runtime_trace(root: Path, config: CppRuntimeTraceConfig, verbose: bool = True) -> dict[str, Any]:
-    if os.name == 'nt':
-        raise RuntimeError('C/C++ runtime tracing is not supported on Windows yet; use Linux or macOS loader tracing')
     executable = Path(config.target)
     if not executable.is_absolute():
         executable = (root / executable).resolve()
@@ -721,6 +921,8 @@ def run_cpp_runtime_trace(root: Path, config: CppRuntimeTraceConfig, verbose: bo
     elif sys.platform == 'darwin':
         env['DYLD_PRINT_LIBRARIES'] = '1'
         engine = 'dyld'
+    elif os.name == 'nt':
+        engine = 'pe_import_table'
     else:
         raise RuntimeError(f'C/C++ runtime tracing is not supported on platform: {sys.platform}')
 
@@ -744,8 +946,15 @@ def run_cpp_runtime_trace(root: Path, config: CppRuntimeTraceConfig, verbose: bo
         exit_code = 124
         timed_out = True
         error = f'Runtime trace timed out after {config.timeout_s}s'
+    except OSError as exc:
+        stderr = ''
+        exit_code = 1
+        timed_out = False
+        error = f'{type(exc).__name__}: {exc}'
 
-    edges = _parse_linux_loader_edges(stderr, root.resolve(), entry_rel) if engine == 'ld_debug' else _parse_macos_loader_edges(stderr, root.resolve(), entry_rel)
+    edges, parse_error = _parse_cpp_loader_edges(engine, stderr, root.resolve(), executable, entry_rel)
+    if parse_error and not error:
+        error = parse_error
     payload = _build_cpp_runtime_payload(
         root.resolve(),
         config.target,
@@ -1064,11 +1273,14 @@ def _extract_source_mapping_url(source_path: Path) -> str | None:
 
 
 def _decode_inline_source_map(url: str) -> dict[str, Any] | None:
-    if not url.startswith('data:application/json;base64,'):
+    if not url.startswith('data:'):
         return None
     try:
-        encoded = url.split(',', 1)[1]
-        decoded = base64.b64decode(encoded)
+        metadata, payload = url.split(',', 1)
+        if ';base64' in metadata.lower():
+            decoded = base64.b64decode(payload)
+        else:
+            decoded = unquote_to_bytes(payload)
         return json.loads(decoded.decode('utf-8'))
     except Exception:
         return None
@@ -1081,7 +1293,14 @@ def _load_source_map_payload(source_path: Path) -> tuple[dict[str, Any], Path | 
         inline = _decode_inline_source_map(mapping_url)
         if inline is not None:
             return inline, None
-        custom_map_path = (source_path.parent / mapping_url).resolve()
+        if mapping_url.startswith(('http://', 'https://')):
+            return None, None
+        if mapping_url.startswith('file:'):
+            custom_map_path = Path(url2pathname(urlparse(mapping_url).path)).resolve()
+        else:
+            decoded_mapping_url = unquote(mapping_url)
+            custom_path = Path(decoded_mapping_url)
+            custom_map_path = custom_path.resolve() if custom_path.is_absolute() else (source_path.parent / custom_path).resolve()
         if custom_map_path.exists():
             try:
                 return json.loads(custom_map_path.read_text(encoding='utf-8')), custom_map_path
@@ -1097,14 +1316,19 @@ def _load_source_map_payload(source_path: Path) -> tuple[dict[str, Any], Path | 
 
 
 def _iter_source_map_sources(payload: dict[str, Any]) -> list[str]:
-    sources = [source for source in payload.get('sources', []) if isinstance(source, str)]
+    return [source for source, _source_root in _iter_source_map_entries(payload)]
+
+
+def _iter_source_map_entries(payload: dict[str, Any], inherited_source_root: str = '') -> list[tuple[str, str]]:
+    source_root = str(payload.get('sourceRoot', inherited_source_root) or '')
+    sources = [(source, source_root) for source in payload.get('sources', []) if isinstance(source, str)]
     sections = payload.get('sections', [])
     for section in sections if isinstance(sections, list) else []:
         if not isinstance(section, dict):
             continue
         nested = section.get('map')
         if isinstance(nested, dict):
-            sources.extend(_iter_source_map_sources(nested))
+            sources.extend(_iter_source_map_entries(nested, source_root))
     return sources
 
 
@@ -1121,7 +1345,6 @@ def _source_map_candidates(raw_id: str, root: Path | None) -> list[str]:
     if not payload:
         return []
 
-    source_root = str(payload.get('sourceRoot', '') or '')
     seen: set[str] = set()
     candidates: list[str] = []
 
@@ -1134,8 +1357,7 @@ def _source_map_candidates(raw_id: str, root: Path | None) -> list[str]:
             candidates.append(rel_str)
 
     map_parent = map_path.parent if map_path is not None else source_path.parent
-    root_bases = _source_map_root_bases(source_root, map_parent, root.resolve())
-    for source in _iter_source_map_sources(payload):
+    for source, source_root in _iter_source_map_entries(payload):
         if not isinstance(source, str):
             continue
         source_token = _strip_source_map_noise(source)
@@ -1153,6 +1375,7 @@ def _source_map_candidates(raw_id: str, root: Path | None) -> list[str]:
                 add_candidate(root.resolve() / hint)
             if '://' in source_token and not source_token.startswith('file:'):
                 continue
+            root_bases = _source_map_root_bases(source_root, map_parent, root.resolve())
             for base in root_bases:
                 add_candidate((base / source_token).resolve())
                 for hint in _source_map_repo_hints(source_token):
