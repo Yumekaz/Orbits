@@ -70,10 +70,15 @@ export async function waitForGraphLoaded(page: Page, expectedNodes?: number): Pr
 
 export async function loadFixture<T = any>(page: Page, fixtureName: string): Promise<T> {
   const fixture = JSON.parse(await readFile(fixturePath(fixtureName), 'utf8')) as T & { nodes?: unknown[] };
+  await page.unroute('**/graph.json').catch(() => undefined);
+  await page.route('**/graph.json', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(fixture),
+    });
+  });
   await gotoVisualizer(page);
-  await page.evaluate((graph) => {
-    (window as any).loadGraph(graph);
-  }, fixture);
   await waitForGraphLoaded(page, fixture.nodes?.length);
   return fixture;
 }
