@@ -12,6 +12,8 @@ eggs/
 .eggs/
 lib/
 lib64/
+!npm/orbits/lib/
+!npm/orbits/lib/python.js
 parts/
 sdist/
 var/
@@ -62,6 +64,8 @@ node_modules/
 out/
 target/
 bin/
+!npm/orbits/bin/
+!npm/orbits/bin/orbits.js
 obj/
 .hg/
 .svn/

@@ -1,0 +1,41 @@
+{
+  "name": "@yumekaz/orbits",
+  "version": "0.1.0",
+  "description": "npm wrapper for the Orbits codebase graph analyzer and dead-code detector.",
+  "license": "UNLICENSED",
+  "homepage": "https://github.com/Yumekaz/Orbits#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Yumekaz/Orbits.git",
+    "directory": "npm/orbits"
+  },
+  "bugs": {
+    "url": "https://github.com/Yumekaz/Orbits/issues"
+  },
+  "keywords": [
+    "codebase",
+    "dependency-graph",
+    "dead-code",
+    "static-analysis",
+    "visualization"
+  ],
+  "bin": {
+    "orbits": "bin/orbits.js"
+  },
+  "files": [
+    "bin/",
+    "lib/",
+    "scripts/",
+    "README.md"
+  ],
+  "scripts": {
+    "postinstall": "node scripts/install-python-package.js",
+    "test": "node scripts/smoke-test.js"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

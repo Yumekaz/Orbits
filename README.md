@@ -62,6 +62,13 @@ python -m orbits . --serve
 
 The console script maps to the existing `analyzer:main` entry point, and the packaged wheel includes the visualizer assets used by `--serve`. The legacy `python analyzer.py ...` form still works from a source checkout.
 
+For npm-based toolchains, Orbits also has a scoped wrapper that installs the PyPI package and exposes the same CLI:
+
+```powershell
+npm install -g @yumekaz/orbits
+orbits . --serve
+```
+
 ## What It Does
 
 - Crawls a project tree while skipping common noise

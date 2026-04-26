@@ -13,6 +13,8 @@
   "scripts": {
     "test:e2e": "playwright test",
     "test:e2e:visual": "node scripts/visual-baselines.mjs",
-    "test:e2e:visual:update": "node scripts/visual-baselines.mjs --update"
+    "test:e2e:visual:update": "node scripts/visual-baselines.mjs --update",
+    "test:npm-wrapper": "npm --prefix npm/orbits test",
+    "pack:npm-wrapper": "node scripts/pack-npm-wrapper.mjs"
   }
 }
