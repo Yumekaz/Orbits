@@ -1,13 +1,15 @@
 # Orbits
 
-Orbits analyzes a source tree, resolves project-local dependencies, writes a `graph.json`, and serves a bundled visualizer for exploring the dependency graph.
+Orbits shows what a codebase is, what actually ran, and what looks safe to clean up.
+
+It analyzes a source tree, resolves project-local dependencies, merges optional runtime traces, scores dead-code confidence with git/runtime evidence, writes a `graph.json`, and serves a bundled visualizer for exploring the result.
 
 The current stack is:
 
 - Python backend analyzer
 - D3 + canvas visualizer
 - browser-side worker analysis for folder loading in supported browsers
-- local HTTP serving through `analyzer.py --serve`
+- local HTTP serving through `orbits scan . --open`
 - first-class HTML/CSS/static-asset graph extraction for web projects
 - optional Python and Node.js runtime tracing with merged dynamic-edge overlays
 
@@ -17,7 +19,7 @@ From the repo root:
 
 1. Create and activate a local venv.
 2. Install frontend dependencies once.
-3. Run the analyzer with `--serve`.
+3. Run the analyzer with `scan . --open`.
 
 ### Windows PowerShell
 
@@ -25,7 +27,7 @@ From the repo root:
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 npm install
-python analyzer.py . --serve
+python analyzer.py scan . --open
 ```
 
 Then open the URL printed by the server, typically:
@@ -37,7 +39,7 @@ http://127.0.0.1:8765/visualizer.html
 ### If You Only Want a Graph File
 
 ```powershell
-python analyzer.py .
+python analyzer.py scan .
 ```
 
 That writes `graph.json` in the repo root by default.
@@ -45,7 +47,7 @@ That writes `graph.json` in the repo root by default.
 ### If You Already Have a Venv
 
 ```powershell
-.\.venv\Scripts\python.exe analyzer.py . --serve
+.\.venv\Scripts\python.exe analyzer.py scan . --open
 ```
 
 ## Installable CLI
@@ -54,19 +56,19 @@ Orbits can be installed as a normal Python CLI:
 
 ```powershell
 python -m pip install -e .
-orbits . -o graph.json
-orbits . --serve
+orbits scan . -o graph.json
+orbits scan . --open
 orbits --diff C:/temp/old-graph.json C:/temp/new-graph.json
-python -m orbits . --serve
+python -m orbits scan . --open
 ```
 
-The console script maps to the existing `analyzer:main` entry point, and the packaged wheel includes the visualizer assets used by `--serve`. The legacy `python analyzer.py ...` form still works from a source checkout.
+The console script maps to the existing `analyzer:main` entry point, and the packaged wheel includes the visualizer assets used by `--open`. The legacy `orbits . --serve` / `python analyzer.py . --serve` forms still work.
 
 For npm-based toolchains, Orbits also has a scoped wrapper that installs the PyPI package and exposes the same CLI:
 
 ```powershell
 npm install -g @yumekaz/orbits
-orbits . --serve
+orbits scan . --open
 ```
 
 ## What It Does
@@ -77,6 +79,8 @@ orbits . --serve
 - Resolves project-local dependencies
 - Computes cycles, islands, orphans, depth, health, and summary stats
 - Detects common project entrypoints so launch files are not reported as dead just because nothing imports them
+- Scores dead-code confidence from structure, git age/churn, and runtime touch evidence
+- Produces PR-friendly graph diffs, including dead-file, classification, confidence, and runtime-edge changes
 - Serves an interactive visualizer for the generated graph
 
 ## Entrypoint Detection
@@ -243,8 +247,8 @@ If grammars are missing, Orbits reports unsupported languages in CLI output and 
 Node runtime tracing uses the same overlay contract as Python:
 
 ```bash
-python analyzer.py /path/to/project --trace-node app.js
-python analyzer.py /path/to/project --trace-node-module myapp.cli --trace-arg=--mode --trace-arg=dev
+orbits scan /path/to/project --trace-node app.js
+orbits scan /path/to/project --trace-node-module myapp.cli --trace-arg=--mode --trace-arg=dev
 ```
 
 It writes a separate runtime artifact and merges into `dynamic_edges` exactly like Python.
@@ -252,13 +256,13 @@ It writes a separate runtime artifact and merges into `dynamic_edges` exactly li
 You can also merge existing runtime artifacts back into a fresh static analysis:
 
 ```bash
-python analyzer.py /path/to/project --runtime-input C:/tmp/python_runtime.json --runtime-input C:/tmp/node_runtime.json
+orbits scan /path/to/project --runtime-input C:/tmp/python_runtime.json --runtime-input C:/tmp/node_runtime.json
 ```
 
 Scoped native tracing is also available for local C / C++ binaries on supported platforms:
 
 ```bash
-python analyzer.py /path/to/project --trace-cpp build/my_binary
+orbits scan /path/to/project --trace-cpp build/my_binary
 ```
 
 On Linux this captures local loader edges and symbol bindings via loader diagnostics. On macOS it captures local loader edges. On Windows it executes the entry binary normally and adds scoped local DLL dependency edges from the executable's PE import table. Windows tracing is loader/dependency oriented; it does not claim deep native tracing, syscall tracing, or universal `LoadLibrary` discovery.
@@ -279,50 +283,50 @@ The active frontend uses D3. Cytoscape is not the active renderer path.
 Analyze a project:
 
 ```bash
-python analyzer.py /path/to/project
+orbits scan /path/to/project
 ```
 
 Analyze and serve the visualizer:
 
 ```bash
-python analyzer.py /path/to/project --serve
+orbits scan /path/to/project --open
 ```
 
 Trace a Python script at runtime and merge dynamic edges:
 
 ```bash
-python analyzer.py /path/to/project --trace-python app.py --serve
+orbits scan /path/to/project --trace-python app.py --open
 ```
 
 Trace a Python module with arguments:
 
 ```bash
-python analyzer.py /path/to/project --trace-module myapp.cli --trace-arg=--mode --trace-arg=dev
+orbits scan /path/to/project --trace-module myapp.cli --trace-arg=--mode --trace-arg=dev
 ```
 
 Trace a Node.js script or module with the same argument style:
 
 ```bash
-python analyzer.py /path/to/project --trace-node app.js
-python analyzer.py /path/to/project --trace-node-module myapp.cli --trace-arg=--mode --trace-arg=dev
+orbits scan /path/to/project --trace-node app.js
+orbits scan /path/to/project --trace-node-module myapp.cli --trace-arg=--mode --trace-arg=dev
 ```
 
 Write the runtime artifact somewhere else:
 
 ```bash
-python analyzer.py /path/to/project --trace-python app.py --runtime-output C:/temp/runtime_trace.json
+orbits scan /path/to/project --trace-python app.py --runtime-output C:/temp/runtime_trace.json
 ```
 
 Merge one or more existing runtime artifacts into a fresh graph:
 
 ```bash
-python analyzer.py /path/to/project --runtime-input C:/temp/python_runtime.json --runtime-input C:/temp/node_runtime.json
+orbits scan /path/to/project --runtime-input C:/temp/python_runtime.json --runtime-input C:/temp/node_runtime.json
 ```
 
 Write output somewhere else and still serve correctly:
 
 ```bash
-python analyzer.py /path/to/project -o C:/temp/my-graph.json --serve
+orbits scan /path/to/project -o C:/temp/my-graph.json --open
 ```
 
 Compare two graph snapshots:
@@ -332,13 +336,14 @@ python analyzer.py --diff C:/temp/old-graph.json C:/temp/new-graph.json
 python analyzer.py --diff C:/temp/old-graph.json C:/temp/new-graph.json --diff-json
 ```
 
-The diff reports added and removed nodes, added and removed dependency edges, and waste count changes. Edge comparison uses `source -> target`, so line-number-only import churn does not count as a dependency change.
+The diff reports added and removed nodes, static and runtime dependency edges, dead-file changes, classification changes, and confidence-score changes. Edge comparison uses `source -> target`, so line-number-only import churn does not count as a dependency change.
 
 ### Demo Evidence
 
 The `examples/` directory contains lightweight, deterministic material for a judge or reviewer:
 
 - `examples/orbits-demo.png`: screenshot of the visualizer
+- `examples/demo-pr-comment.md`: sample PR comment showing confidence evidence and graph-diff impact
 - `examples/orbits.config.example.json`: sample `.orbits.json` config shape
 - `examples/README.md`: install, analyze, check, reports, diff, and runtime-boundary command transcript
 - `examples/fixtures/*.json`: tiny graph snapshots for `orbits --diff`
@@ -386,7 +391,7 @@ If both exist, `codegraph.config.json` is loaded first and `.orbits.json` can ex
 Write explicit dead-file reports:
 
 ```bash
-python analyzer.py /path/to/project --dead-report-md dead-files.md --dead-report-csv dead-files.csv
+orbits scan /path/to/project --dead-report-md dead-files.md --dead-report-csv dead-files.csv
 ```
 
 When the analyzed root is inside a Git worktree, each dead-file item is also
@@ -398,8 +403,8 @@ touch lowers confidence while an untouched fresh trace raises it.
 Run a deterministic CI-style check:
 
 ```bash
-python analyzer.py /path/to/project --check
-python analyzer.py /path/to/project --check --max-orphans 0 --max-islands 1 --min-health 90
+orbits scan /path/to/project --check
+orbits scan /path/to/project --check --max-orphans 0 --max-islands 1 --min-health 90
 ```
 
 ### GitHub Actions and Thresholds
@@ -407,7 +412,7 @@ python analyzer.py /path/to/project --check --max-orphans 0 --max-islands 1 --mi
 The included Orbits workflow runs the same CLI check on pushes and pull requests:
 
 ```bash
-python analyzer.py . -o orbits-artifacts/graph.json --dead-report-md orbits-artifacts/dead-files.md --dead-report-csv orbits-artifacts/dead-files.csv --check
+orbits scan . -o orbits-artifacts/graph.json --dead-report-md orbits-artifacts/dead-files.md --dead-report-csv orbits-artifacts/dead-files.csv --check
 ```
 
 It uploads `graph.json`, `dead-files.md`, `dead-files.csv`, check logs, and the generated PR comment body as the `orbits-report` artifact. On pull requests, it also tries to build a base-branch graph diff and update a sticky PR comment. Comment posting is best-effort; the check artifacts are still produced when the token cannot write comments.

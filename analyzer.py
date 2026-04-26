@@ -7,6 +7,7 @@ Phase 5: optional Python and Node.js runtime tracing.
 
 Usage:
     python analyzer.py /path/to/project --serve
+    python analyzer.py scan /path/to/project --open
     python analyzer.py /path/to/project -o graph.json
     python analyzer.py --diff old_graph.json new_graph.json
 """
@@ -180,6 +181,90 @@ def _graph_root_from_file(graph_path: Path) -> Path | None:
         return None
     root = payload.get('meta', {}).get('root')
     return Path(root) if root else None
+
+
+def _items_by_id(items: list | None) -> dict[str, dict]:
+    indexed: dict[str, dict] = {}
+    if not isinstance(items, list):
+        return indexed
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        item_id = _normalize_relpath(str(item.get('id') or item.get('filepath') or ''))
+        if item_id:
+            indexed[item_id] = item
+    return indexed
+
+
+def _confidence_reasons(item: dict) -> list[str]:
+    confidence = item.get('dead_confidence') if isinstance(item.get('dead_confidence'), dict) else {}
+    reasons = confidence.get('reasons', item.get('confidence_reasons', []))
+    if isinstance(reasons, str):
+        return [part.strip() for part in reasons.split(';') if part.strip()]
+    if isinstance(reasons, list):
+        return [str(reason).strip() for reason in reasons if str(reason).strip()]
+    return []
+
+
+def _build_delete_file_plan(graph: dict, relpath: str, target: Path) -> dict:
+    relpath = _normalize_relpath(relpath)
+    waste_item = _items_by_id(graph.get('waste', [])).get(relpath)
+    node_item = _items_by_id(graph.get('nodes', [])).get(relpath)
+    item = {**(node_item or {}), **(waste_item or {})}
+    classification = str(item.get('classification') or '').upper()
+    confidence = item.get('dead_confidence') if isinstance(item.get('dead_confidence'), dict) else {}
+    raw_score = confidence.get('score', item.get('confidence_score'))
+    try:
+        score = int(raw_score)
+    except (TypeError, ValueError):
+        score = None
+    level = str(confidence.get('level', item.get('confidence_level', '')) or '').lower()
+    runtime_context = item.get('runtime_context') if isinstance(item.get('runtime_context'), dict) else {}
+    blockers: list[str] = []
+
+    if waste_item is None:
+        blockers.append('not in the actionable dead-file list')
+    if classification not in {'ORPHAN', 'ISLAND'}:
+        blockers.append(f'classification is {classification or "unknown"}, not ORPHAN/ISLAND')
+    if score is None:
+        blockers.append('missing deletion confidence score')
+    elif score < 75:
+        blockers.append(f'confidence score is {score}/100, below the high-confidence threshold')
+    if level and level != 'high':
+        blockers.append(f'confidence level is {level}, not high')
+    if item.get('entrypoint'):
+        blockers.append('detected as an entrypoint')
+    if item.get('runtime_only'):
+        blockers.append('exists only in a runtime overlay')
+    if runtime_context.get('touched') is True:
+        blockers.append('observed in a runtime trace')
+    if runtime_context.get('stale') is True:
+        blockers.append('runtime evidence is stale')
+    if target.is_dir():
+        blockers.append('target is a directory')
+
+    allowed = not blockers
+    reasons = _confidence_reasons(item)
+    if not reasons and score is not None:
+        reasons = [f'confidence score {score}/100']
+
+    return {
+        'path': relpath,
+        'allowed': allowed,
+        'classification': classification or 'unknown',
+        'confidence_score': score,
+        'confidence_level': level or 'unknown',
+        'runtime_available': bool(runtime_context.get('available')),
+        'runtime_touched': bool(runtime_context.get('touched')),
+        'runtime_stale': bool(runtime_context.get('stale')),
+        'evidence': reasons,
+        'blockers': blockers,
+        'message': (
+            'High-confidence delete candidate.'
+            if allowed
+            else 'Deletion blocked: ' + '; '.join(blockers)
+        ),
+    }
 
 
 def _intentional_file_path(root: Path) -> Path:
@@ -393,9 +478,17 @@ class _GraphRequestHandler(http.server.BaseHTTPRequestHandler):
             raise FileNotFoundError(relpath)
         if target.is_dir():
             raise IsADirectoryError(relpath)
+        graph = _load_graph_payload(self.graph_path)
+        plan = _build_delete_file_plan(graph, relpath, target)
+        if payload.get('dry_run'):
+            self._send_json({'ok': True, 'delete_plan': plan})
+            return
+        if not plan['allowed'] or not payload.get('confirmed'):
+            self._send_json({'ok': False, 'error': plan['message'], 'delete_plan': plan}, status=409)
+            return
         target.unlink()
         graph = _rerun_graph(self.graph_path, runtime_stale=True)
-        self._send_json({'ok': True, 'graph': graph})
+        self._send_json({'ok': True, 'graph': graph, 'delete_plan': plan})
 
     def _handle_mark_intentional(self, payload: dict):
         relpath = str(payload.get('id', '')).replace('\\', '/')
@@ -711,7 +804,15 @@ def serve(output_path: Path, port: int = 8765):
             print('\n  Stopped.', file=sys.stderr)
 
 
-def main():
+def _normalize_cli_args(argv: list[str] | None) -> list[str] | None:
+    if argv is None:
+        argv = sys.argv[1:]
+    if argv and argv[0] == 'scan':
+        return argv[1:]
+    return argv
+
+
+def main(argv: list[str] | None = None):
     parser = argparse.ArgumentParser(
         prog='orbits',
         description='Orbits - multi-language codebase dependency graph and dead code detector',
@@ -721,10 +822,10 @@ Supports: Python, JavaScript, TypeScript, Go + generic fallback
 Phase 5: optional Python, Node.js, and scoped C/C++ runtime tracing
 
 Examples:
-  python analyzer.py .
-  python analyzer.py ~/projects/myapp --serve
-  python analyzer.py ~/projects/myapp -o graph.json --serve
-  python analyzer.py --diff old_graph.json new_graph.json
+  orbits scan .
+  orbits scan . --open
+  orbits scan ~/projects/myapp -o graph.json --open
+  orbits --diff old_graph.json new_graph.json
         """,
     )
     parser.add_argument('path', nargs='?', help='Project root directory')
@@ -749,9 +850,9 @@ Examples:
     parser.add_argument('--max-orphans', type=int, help='Check threshold: maximum actionable orphan files')
     parser.add_argument('--max-islands', type=int, help='Check threshold: maximum actionable island clusters')
     parser.add_argument('--min-health', type=int, help='Check threshold: minimum graph health score')
-    parser.add_argument('--serve', action='store_true', help='Open visualizer in browser after analysis')
+    parser.add_argument('--serve', '--open', dest='serve', action='store_true', help='Open visualizer in browser after analysis')
     parser.add_argument('--port', type=int, default=8765)
-    args = parser.parse_args()
+    args = parser.parse_args(_normalize_cli_args(argv))
 
     if args.diff:
         diff = diff_graph_files(args.diff[0], args.diff[1])
@@ -852,7 +953,7 @@ Examples:
     if args.serve:
         serve(output_path, args.port)
     else:
-        print('  Run with --serve to open the visualizer.\n', file=sys.stderr)
+        print('  Run with --open to open the visualizer.\n', file=sys.stderr)
 
 
 if __name__ == '__main__':

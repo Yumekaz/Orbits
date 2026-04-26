@@ -53,7 +53,7 @@ jobs:
         run: |
           mkdir -p "$ORBITS_ARTIFACT_DIR"
           set +e
-          python analyzer.py . \
+          python analyzer.py scan . \
             -o "$ORBITS_ARTIFACT_DIR/graph.json" \
             --dead-report-md "$ORBITS_ARTIFACT_DIR/dead-files.md" \
             --dead-report-csv "$ORBITS_ARTIFACT_DIR/dead-files.csv" \
@@ -78,7 +78,7 @@ jobs:
         if: github.event_name == 'pull_request'
         run: |
           set +e
-          python analyzer.py orbits-baseline \
+          python analyzer.py scan orbits-baseline \
             -o "$ORBITS_ARTIFACT_DIR/base-graph.json" \
             >"$ORBITS_ARTIFACT_DIR/orbits-base.out" \
             2>"$ORBITS_ARTIFACT_DIR/orbits-base.err"

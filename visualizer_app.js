@@ -1204,6 +1204,22 @@
     return 'Static graph evidence; runtime overlay has no edge for this node.';
   }
 
+  function wasteItemFor(id) {
+    const normalized = normalizeId(id);
+    return (APP.graph?.waste || []).find((item) => normalizeId(item.id || item.filepath) === normalized) || null;
+  }
+
+  function mergeWasteNode(item) {
+    const node = APP.indexes.nodeById.get(normalizeId(item.id || item.filepath));
+    return node ? { ...node, ...item } : item;
+  }
+
+  function deleteButtonLabel(node) {
+    const score = Number(node.confidence_score ?? node.dead_confidence?.score ?? 0);
+    const runtime = node.runtime_context || {};
+    return score >= 75 && runtime.touched !== true && runtime.stale !== true ? 'del' : 'plan';
+  }
+
   function wasteMetaPills(node) {
     const meta = getRuntimeMeta();
     const runtime = runtimeNodeEdges(node.id);
@@ -1222,7 +1238,9 @@
 
   function itemRow(node, color) {
     const id = escapeHtml(normalizeId(node.id));
-    return `<div class="list-item" data-id="${id}"><div class="item-dot" style="background:${color}"></div><div class="item-info"><div class="item-name">${escapeHtml(basename(node.id))}</div><div class="item-path">${escapeHtml(dirname(node.id))}</div><div class="item-meta">${wasteMetaPills(node)}</div></div><div class="item-actions"><button class="item-btn" data-open="${id}">open</button><button class="item-btn" data-intentional="${id}">keep</button><button class="item-btn" data-delete="${id}">del</button></div></div>`;
+    const deleteLabel = deleteButtonLabel(node);
+    const deleteTitle = deleteLabel === 'del' ? 'Delete high-confidence candidate' : 'Show delete safety plan';
+    return `<div class="list-item" data-id="${id}"><div class="item-dot" style="background:${color}"></div><div class="item-info"><div class="item-name">${escapeHtml(basename(node.id))}</div><div class="item-path">${escapeHtml(dirname(node.id))}</div><div class="item-meta">${wasteMetaPills(node)}</div></div><div class="item-actions"><button class="item-btn" data-open="${id}">open</button><button class="item-btn" data-intentional="${id}">keep</button><button class="item-btn" data-delete="${id}" title="${escapeHtml(deleteTitle)}">${deleteLabel}</button></div></div>`;
   }
 
   function bindRowClicks(container) {
@@ -1237,7 +1255,7 @@
 
   function renderWaste() {
     if (!APP.graph) return;
-    const waste = (APP.graph.waste || []).map((item) => APP.indexes.nodeById.get(normalizeId(item.id)) || item).filter((node) => nodeVisible(node));
+    const waste = (APP.graph.waste || []).map((item) => mergeWasteNode(item)).filter((node) => nodeVisible(node));
     ELS['waste-badge'].textContent = waste.length;
     ELS['waste-badge'].className = `badge${waste.length === 0 ? ' ok' : ''}`;
     if (!waste.length) { ELS['waste-list'].innerHTML = '<div style="padding:40px;text-align:center;color:var(--green);font-size:11px">✓ Clean codebase</div>'; return; }
@@ -1279,7 +1297,21 @@
     return data;
   }
   async function openNodeFile(id) { await apiPost('/api/open-file', { id }); toast('Opened file'); }
-  async function deleteNodeFile(id) { if (!confirm(`Delete ${id}?`)) return; const data = await apiPost('/api/delete-file', { id }); setGraphData(data.graph); toast('File deleted'); }
+  async function deleteNodeFile(id) {
+    const preview = await apiPost('/api/delete-file', { id, dry_run: true });
+    const plan = preview.delete_plan || {};
+    const evidence = (plan.evidence || []).slice(0, 4).map((item) => `- ${item}`).join('\n') || '- no evidence recorded';
+    if (!plan.allowed) {
+      const blockers = (plan.blockers || []).map((item) => `- ${item}`).join('\n') || '- blocked by safety policy';
+      alert(`Orbits will not delete ${id} from the UI.\n\n${plan.message || 'Deletion blocked.'}\n\n${blockers}\n\nEvidence:\n${evidence}`);
+      return;
+    }
+    const score = plan.confidence_score == null ? 'unknown' : `${plan.confidence_score}/100`;
+    if (!confirm(`Delete high-confidence dead file?\n\n${id}\n\nConfidence: ${plan.confidence_level || 'unknown'} (${score})\nClassification: ${plan.classification || 'unknown'}\n\nEvidence:\n${evidence}`)) return;
+    const data = await apiPost('/api/delete-file', { id, confirmed: true });
+    setGraphData(data.graph);
+    toast('File deleted');
+  }
   async function markIntentional(id, intentional = true) { const data = await apiPost('/api/mark-intentional', { id, intentional }); setGraphData(data.graph); toast(intentional ? 'Marked intentional' : 'Removed intentional mark'); }
 
   function updateInspector() {

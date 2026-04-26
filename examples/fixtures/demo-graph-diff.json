@@ -1,0 +1,99 @@
+{
+  "baseline": {
+    "path": "examples\\fixtures\\baseline-graph.json",
+    "nodes": 4,
+    "edges": 1,
+    "waste": 2
+  },
+  "current": {
+    "path": "examples\\fixtures\\current-graph.json",
+    "nodes": 4,
+    "edges": 2,
+    "waste": 2
+  },
+  "nodes": {
+    "added": [
+      "new.py"
+    ],
+    "removed": [
+      "old.py"
+    ],
+    "before": 4,
+    "after": 4,
+    "delta": 0
+  },
+  "edges": {
+    "added": [
+      {
+        "source": "app.py",
+        "target": "new.py"
+      }
+    ],
+    "removed": [],
+    "before": 1,
+    "after": 2,
+    "delta": 1
+  },
+  "dynamic_edges": {
+    "added": [
+      {
+        "source": "app.py",
+        "target": "new.py"
+      }
+    ],
+    "removed": [],
+    "before": 0,
+    "after": 1,
+    "delta": 1
+  },
+  "waste": {
+    "added": [
+      "new.py"
+    ],
+    "removed": [
+      "old.py"
+    ],
+    "before": 2,
+    "after": 2,
+    "delta": 0
+  },
+  "classification_changes": {
+    "changed": [
+      {
+        "id": "util.py",
+        "before": "INTERNAL",
+        "after": "LEAF"
+      }
+    ],
+    "count": 1
+  },
+  "confidence_changes": {
+    "changed": [
+      {
+        "id": "shared.py",
+        "before_score": 56,
+        "after_score": 79,
+        "delta": 23,
+        "before_level": "medium",
+        "after_level": "high"
+      }
+    ],
+    "count": 1
+  },
+  "runtime": {
+    "before": {
+      "enabled": false,
+      "stale": false,
+      "session_count": 0,
+      "runtime_edges": 0,
+      "entrypoint": ""
+    },
+    "after": {
+      "enabled": true,
+      "stale": false,
+      "session_count": 1,
+      "runtime_edges": 1,
+      "entrypoint": "app.py"
+    }
+  }
+}

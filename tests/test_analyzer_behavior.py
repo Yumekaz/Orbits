@@ -3,6 +3,7 @@ import threading
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 from urllib.request import urlopen
 
 import analyzer
@@ -14,6 +15,91 @@ def _normalize_pairs(edges):
 
 
 class AnalyzerBehaviorTests(unittest.TestCase):
+    def _minimal_graph(self):
+        return {
+            'nodes': [],
+            'edges': [],
+            'summary': {'health_score': 100},
+            'meta': {
+                'total_files': 0,
+                'total_edges': 0,
+                'import_stats': {},
+            },
+        }
+
+    def test_scan_open_alias_runs_analysis_and_serves(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            output = root / 'scan-graph.json'
+            served = []
+
+            with patch.object(analyzer, 'run', return_value=self._minimal_graph()) as run_mock, \
+                    patch.object(analyzer, 'serve', side_effect=lambda path, port: served.append((Path(path), port))):
+                analyzer.main(['scan', str(root), '--open', '--output', str(output), '--port', '9001'])
+
+            run_mock.assert_called_once()
+            self.assertEqual(run_mock.call_args.args[0], root.resolve())
+            self.assertEqual(served, [(output.resolve(), 9001)])
+            self.assertTrue(output.is_file())
+
+    def test_legacy_serve_still_runs_analysis_and_serves(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            output = root / 'legacy-graph.json'
+            served = []
+
+            with patch.object(analyzer, 'run', return_value=self._minimal_graph()), \
+                    patch.object(analyzer, 'serve', side_effect=lambda path, port: served.append((Path(path), port))):
+                analyzer.main([str(root), '--serve', '--output', str(output), '--port', '9002'])
+
+            self.assertEqual(served, [(output.resolve(), 9002)])
+            self.assertTrue(output.is_file())
+
+    def test_delete_plan_allows_only_high_confidence_untouched_waste(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / 'dead.py'
+            target.write_text('print("old")\n', encoding='utf-8')
+            graph = {
+                'nodes': [{'id': 'dead.py', 'classification': 'ORPHAN'}],
+                'waste': [{
+                    'id': 'dead.py',
+                    'classification': 'ORPHAN',
+                    'confidence_score': 84,
+                    'confidence_level': 'high',
+                    'confidence_reasons': ['structural orphan with no static in/out edges'],
+                    'runtime_context': {'available': True, 'touched': False, 'stale': False},
+                }],
+            }
+
+            plan = analyzer._build_delete_file_plan(graph, 'dead.py', target)
+
+            self.assertTrue(plan['allowed'])
+            self.assertEqual(plan['confidence_score'], 84)
+            self.assertEqual(plan['blockers'], [])
+
+    def test_delete_plan_blocks_runtime_touched_or_low_confidence_files(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / 'maybe.py'
+            target.write_text('print("maybe")\n', encoding='utf-8')
+            graph = {
+                'nodes': [{'id': 'maybe.py', 'classification': 'ORPHAN'}],
+                'waste': [{
+                    'id': 'maybe.py',
+                    'classification': 'ORPHAN',
+                    'confidence_score': 54,
+                    'confidence_level': 'low',
+                    'runtime_context': {'available': True, 'touched': True, 'stale': False},
+                }],
+            }
+
+            plan = analyzer._build_delete_file_plan(graph, 'maybe.py', target)
+
+            self.assertFalse(plan['allowed'])
+            self.assertIn('confidence score is 54/100, below the high-confidence threshold', plan['blockers'])
+            self.assertIn('observed in a runtime trace', plan['blockers'])
+
     def test_run_does_not_edit_gitignore(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)

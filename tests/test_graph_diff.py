@@ -14,13 +14,17 @@ def _base_graph():
             {'id': 'app.py', 'classification': 'ENTRY'},
             {'id': 'lib.py', 'classification': 'LEAF'},
             {'id': 'dead.py', 'classification': 'ORPHAN'},
+            {'id': 'shared.py', 'classification': 'ORPHAN'},
         ],
         'edges': [
             {'source': 'app.py', 'target': 'lib.py', 'line': 3},
         ],
+        'dynamic_edges': [],
         'waste': [
-            {'id': 'dead.py', 'classification': 'ORPHAN'},
+            {'id': 'dead.py', 'classification': 'ORPHAN', 'confidence_score': 81, 'confidence_level': 'high'},
+            {'id': 'shared.py', 'classification': 'ORPHAN', 'confidence_score': 55, 'confidence_level': 'medium'},
         ],
+        'meta': {'runtime': {'enabled': False, 'runtime_edges': 0}},
     }
 
 
@@ -28,16 +32,22 @@ def _current_graph():
     return {
         'nodes': [
             {'id': 'app.py', 'classification': 'ENTRY'},
-            {'id': 'lib.py', 'classification': 'LEAF'},
+            {'id': 'lib.py', 'classification': 'INTERNAL'},
             {'id': 'new.py', 'classification': 'ORPHAN'},
+            {'id': 'shared.py', 'classification': 'ORPHAN'},
         ],
         'edges': [
             {'source': 'app.py', 'target': 'lib.py', 'line': 99},
             {'source': 'app.py', 'target': 'new.py', 'line': 8},
         ],
-        'waste': [
-            {'id': 'new.py', 'classification': 'ORPHAN'},
+        'dynamic_edges': [
+            {'source': 'app.py', 'target': 'new.py', 'runtime_hits': 1},
         ],
+        'waste': [
+            {'id': 'new.py', 'classification': 'ORPHAN', 'confidence_score': 79, 'confidence_level': 'high'},
+            {'id': 'shared.py', 'classification': 'ORPHAN', 'confidence_score': 83, 'confidence_level': 'high'},
+        ],
+        'meta': {'runtime': {'enabled': True, 'runtime_edges': 1, 'stale': False}},
     }
 
 
@@ -53,6 +63,12 @@ class GraphDiffTests(unittest.TestCase):
         self.assertEqual(diff['waste']['added'], ['new.py'])
         self.assertEqual(diff['waste']['removed'], ['dead.py'])
         self.assertEqual(diff['waste']['delta'], 0)
+        self.assertEqual(diff['dynamic_edges']['added'], [{'source': 'app.py', 'target': 'new.py'}])
+        self.assertEqual(diff['classification_changes']['changed'], [{'id': 'lib.py', 'before': 'LEAF', 'after': 'INTERNAL'}])
+        self.assertEqual(diff['confidence_changes']['changed'][0]['id'], 'shared.py')
+        self.assertEqual(diff['confidence_changes']['changed'][0]['delta'], 28)
+        self.assertFalse(diff['runtime']['before']['enabled'])
+        self.assertTrue(diff['runtime']['after']['enabled'])
 
     def test_waste_falls_back_to_node_classification(self):
         baseline = {'nodes': [{'id': 'old.py', 'classification': 'ORPHAN'}], 'edges': []}
@@ -70,9 +86,14 @@ class GraphDiffTests(unittest.TestCase):
         text = graph_diff.format_graph_diff(diff)
 
         self.assertIn('Graph dependency diff', text)
-        self.assertIn('Nodes: 3 -> 3 (0)', text)
+        self.assertIn('Nodes: 4 -> 4 (0)', text)
         self.assertIn('+ app.py -> new.py', text)
-        self.assertIn('Waste: 1 -> 1 (0)', text)
+        self.assertIn('Dynamic edges: 0 -> 1 (+1)', text)
+        self.assertIn('Classification changes: 1', text)
+        self.assertIn('~ lib.py: LEAF -> INTERNAL', text)
+        self.assertIn('Confidence changes: 1', text)
+        self.assertIn('~ shared.py: 55 -> 83 (+28)', text)
+        self.assertIn('Waste: 2 -> 2 (0)', text)
 
     def test_analyzer_cli_diff_json(self):
         with TemporaryDirectory() as tmp:
@@ -101,6 +122,7 @@ class GraphDiffTests(unittest.TestCase):
         payload = json.loads(proc.stdout)
         self.assertEqual(payload['nodes']['added'], ['new.py'])
         self.assertEqual(payload['edges']['added'], [{'source': 'app.py', 'target': 'new.py'}])
+        self.assertEqual(payload['dynamic_edges']['added'], [{'source': 'app.py', 'target': 'new.py'}])
 
 
 if __name__ == '__main__':

@@ -11,6 +11,10 @@
     {
       "id": "old.py",
       "classification": "ORPHAN"
+    },
+    {
+      "id": "shared.py",
+      "classification": "ORPHAN"
     }
   ],
   "edges": [
@@ -19,19 +23,42 @@
       "target": "util.py"
     }
   ],
+  "dynamic_edges": [],
   "waste": [
     {
       "id": "old.py",
-      "classification": "ORPHAN"
+      "classification": "ORPHAN",
+      "confidence_score": 82,
+      "confidence_level": "high",
+      "confidence_reasons": [
+        "structural orphan with no static in/out edges",
+        "last touched 390 days ago",
+        "not observed in fresh runtime trace"
+      ]
+    },
+    {
+      "id": "shared.py",
+      "classification": "ORPHAN",
+      "confidence_score": 56,
+      "confidence_level": "medium",
+      "confidence_reasons": [
+        "structural orphan with no static in/out edges",
+        "recently touched 20 days ago",
+        "no runtime evidence available"
+      ]
     }
   ],
   "summary": {
-    "total": 3,
+    "total": 4,
     "health_score": 80
   },
   "meta": {
     "root": "examples/fixtures/baseline",
-    "total_files": 3,
-    "total_edges": 1
+    "total_files": 4,
+    "total_edges": 1,
+    "runtime": {
+      "enabled": false,
+      "runtime_edges": 0
+    }
   }
 }

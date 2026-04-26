@@ -6,10 +6,14 @@
     },
     {
       "id": "util.py",
-      "classification": "INTERNAL"
+      "classification": "LEAF"
     },
     {
       "id": "new.py",
+      "classification": "ORPHAN"
+    },
+    {
+      "id": "shared.py",
       "classification": "ORPHAN"
     }
   ],
@@ -23,19 +27,51 @@
       "target": "new.py"
     }
   ],
+  "dynamic_edges": [
+    {
+      "source": "app.py",
+      "target": "new.py",
+      "runtime_hits": 1
+    }
+  ],
   "waste": [
     {
       "id": "new.py",
-      "classification": "ORPHAN"
+      "classification": "ORPHAN",
+      "confidence_score": 86,
+      "confidence_level": "high",
+      "confidence_reasons": [
+        "structural orphan with no static in/out edges",
+        "last touched 420 days ago",
+        "not observed in fresh runtime trace"
+      ]
+    },
+    {
+      "id": "shared.py",
+      "classification": "ORPHAN",
+      "confidence_score": 79,
+      "confidence_level": "high",
+      "confidence_reasons": [
+        "structural orphan with no static in/out edges",
+        "last touched 95 days ago",
+        "not observed in fresh runtime trace"
+      ]
     }
   ],
   "summary": {
-    "total": 3,
+    "total": 4,
     "health_score": 75
   },
   "meta": {
     "root": "examples/fixtures/current",
-    "total_files": 3,
-    "total_edges": 2
+    "total_files": 4,
+    "total_edges": 2,
+    "runtime": {
+      "enabled": true,
+      "stale": false,
+      "session_count": 1,
+      "runtime_edges": 1,
+      "entrypoint": "app.py"
+    }
   }
 }
