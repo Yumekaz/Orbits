@@ -19,6 +19,7 @@ SOURCE_EXTENSIONS = (
     '.py', '.pyi',
     '.js', '.mjs', '.cjs', '.jsx',
     '.ts', '.mts', '.cts', '.tsx',
+    '.html', '.htm',
     '.go',
 )
 
@@ -34,6 +35,7 @@ COMMON_ROOT_NAMES = {
     'main.py', 'app.py', 'server.py', 'manage.py', 'wsgi.py', 'asgi.py', 'cli.py',
     'index.js', 'index.mjs', 'index.cjs', 'index.jsx',
     'index.ts', 'index.mts', 'index.cts', 'index.tsx',
+    'index.html', 'index.htm', 'default.html', 'home.html',
     'main.js', 'main.mjs', 'main.cjs', 'main.jsx',
     'main.ts', 'main.mts', 'main.cts', 'main.tsx',
     'app.js', 'app.ts', 'server.js', 'server.ts',

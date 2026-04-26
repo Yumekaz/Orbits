@@ -108,6 +108,23 @@ class MultiLanguageExtractionTests(unittest.TestCase):
             raw = extract_all(root, verbose=False)
             self.assertIn(('src/main.cpp', 'include/detail/foo.hpp'), _normalized_edges(raw))
 
+    def test_c_dynamic_loader_literal_resolution(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'src').mkdir()
+            (root / 'plugins').mkdir()
+            (root / 'plugins' / 'plugin.so').write_bytes(b'ELF')
+            (root / 'src' / 'main.c').write_text(
+                '#include <dlfcn.h>\n'
+                'int main(){ dlopen("../plugins/plugin.so", 0); return 0; }\n',
+                encoding='utf-8',
+            )
+
+            raw = extract_all(root, verbose=False)
+            self.assertIn(('src/main.c', 'plugins/plugin.so'), _normalized_edges(raw))
+            nodes = {node['id'].replace('\\', '/'): node for node in raw['nodes']}
+            self.assertEqual(nodes['plugins/plugin.so']['language'], 'asset')
+
     def test_java_resolution(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)

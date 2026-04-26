@@ -1,4 +1,5 @@
 import importlib
+from importlib import resources
 import tomllib
 import unittest
 from pathlib import Path
@@ -25,12 +26,25 @@ class PackagingMetadataTests(unittest.TestCase):
         setuptools_config = self.metadata['tool']['setuptools']
         modules = set(setuptools_config['py-modules'])
 
-        for module_name in {'analyzer', 'entrypoints', 'git_intel', 'graph_diff', 'graph_engine', 'lang_dispatch', 'runtime_trace'}:
+        for module_name in {'analyzer', 'entrypoints', 'git_intel', 'graph_diff', 'graph_engine', 'lang_dispatch', 'orbits', 'runtime_trace'}:
             self.assertIn(module_name, modules)
 
         package_includes = set(self.metadata['tool']['setuptools']['packages']['find']['include'])
         self.assertIn('extractors', package_includes)
         self.assertIn('resolvers', package_includes)
+        self.assertIn('orbits_assets', package_includes)
+
+    def test_visualizer_assets_are_package_data(self):
+        package_data = self.metadata['tool']['setuptools']['package-data']
+        self.assertIn('visualizer.html', package_data['orbits_assets'])
+        self.assertIn('visualizer_app.js', package_data['orbits_assets'])
+        self.assertTrue(resources.files('orbits_assets').joinpath('visualizer.html').is_file())
+
+    def test_packaged_visualizer_assets_mirror_source_tree(self):
+        for filename in ('visualizer.html', 'visualizer_app.js', 'visualizer_worker.js', 'visualizer.css'):
+            source = (ROOT / filename).read_bytes()
+            packaged = (ROOT / 'orbits_assets' / filename).read_bytes()
+            self.assertEqual(packaged, source)
 
 
 if __name__ == '__main__':

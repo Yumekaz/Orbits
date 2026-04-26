@@ -7,6 +7,7 @@ JS/TS extraction using tree-sitter Query + QueryCursor.
 from pathlib import Path
 
 from runtime_env import bootstrap_local_venv
+from path_utils import relative_to_root
 
 bootstrap_local_venv()
 
@@ -92,9 +93,8 @@ class JsExtractor(BaseExtractor):
             source = filepath.read_bytes()
         except (OSError, PermissionError):
             return ExtractResult(read_error=True)
-        try:
-            file_rel = str(filepath.relative_to(root))
-        except ValueError:
+        file_rel = relative_to_root(filepath, root)
+        if not file_rel:
             return ExtractResult()
         try:
             return ExtractResult(imports=_extract_with_query(source, _G['js'], file_rel))
@@ -118,9 +118,8 @@ class TsExtractor(BaseExtractor):
             source = filepath.read_bytes()
         except (OSError, PermissionError):
             return ExtractResult(read_error=True)
-        try:
-            file_rel = str(filepath.relative_to(root))
-        except ValueError:
+        file_rel = relative_to_root(filepath, root)
+        if not file_rel:
             return ExtractResult()
         try:
             return ExtractResult(imports=_extract_with_query(source, _G['ts'], file_rel))
@@ -144,9 +143,8 @@ class TsxExtractor(BaseExtractor):
             source = filepath.read_bytes()
         except (OSError, PermissionError):
             return ExtractResult(read_error=True)
-        try:
-            file_rel = str(filepath.relative_to(root))
-        except ValueError:
+        file_rel = relative_to_root(filepath, root)
+        if not file_rel:
             return ExtractResult()
         try:
             lang = _G['tsx'] if filepath.suffix.lower() == '.tsx' else _G['js']

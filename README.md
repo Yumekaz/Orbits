@@ -8,6 +8,7 @@ The current stack is:
 - D3 + canvas visualizer
 - browser-side worker analysis for folder loading in supported browsers
 - local HTTP serving through `analyzer.py --serve`
+- first-class HTML/CSS/static-asset graph extraction for web projects
 - optional Python and Node.js runtime tracing with merged dynamic-edge overlays
 
 ## Quick Start
@@ -49,21 +50,23 @@ That writes `graph.json` in the repo root by default.
 
 ## Installable CLI
 
-Orbits also has minimal Python packaging metadata for local evaluation:
+Orbits can be installed as a normal Python CLI:
 
 ```powershell
 python -m pip install -e .
 orbits . -o graph.json
 orbits . --serve
 orbits --diff C:/temp/old-graph.json C:/temp/new-graph.json
+python -m orbits . --serve
 ```
 
-The console script maps to the existing `analyzer:main` entry point, so the legacy `python analyzer.py ...` form still works. Use editable install from this repo for demos that need `--serve`, because the current visualizer assets are bundled beside the source files.
+The console script maps to the existing `analyzer:main` entry point, and the packaged wheel includes the visualizer assets used by `--serve`. The legacy `python analyzer.py ...` form still works from a source checkout.
 
 ## What It Does
 
 - Crawls a project tree while skipping common noise
 - Extracts imports/includes for multiple languages
+- Extracts HTML links/scripts/forms/media references and CSS `@import` / `url(...)` assets
 - Resolves project-local dependencies
 - Computes cycles, islands, orphans, depth, health, and summary stats
 - Detects common project entrypoints so launch files are not reported as dead just because nothing imports them
@@ -85,6 +88,9 @@ First-class extraction and resolution:
 - C / C++
 - Java
 - Kotlin
+- HTML
+- CSS / SCSS / Sass / Less
+- referenced static assets such as images, fonts, JSON, PDFs, media, and Wasm
 
 Fallback:
 
@@ -94,7 +100,7 @@ Fallback:
 
 1. Crawl the project tree.
 2. Extract raw import/include statements.
-3. Resolve local edges against project files.
+3. Resolve local edges against project files and referenced web assets.
 4. Build graph metadata and summary metrics.
 5. Optionally trace a Python or Node.js entrypoint at runtime and write `runtime_trace.json`.
 6. Merge dynamic runtime edges into the served/exported graph overlay.
@@ -178,6 +184,7 @@ Current scope and honest boundary:
 - Node traces are best for `.js` / `.cjs` / `.mjs` entrypoints; direct TypeScript runtime execution is still not claimed
 - runtime-to-static remapping for transpiled `dist/*.js` to `src/*.ts` now uses source maps, inline maps, custom `sourceMappingURL` files, indexed source-map sections, source roots, and common bundler path forms when available, but is still not compiler-perfect
 - C / C++ tracing is still intentionally scoped: Linux captures loader edges plus local symbol bindings, macOS stays loader-oriented, and Windows captures local PE import-table DLL dependencies
+- static C / C++ analysis also recognizes literal `dlopen(...)`, `LoadLibrary(...)`, and `LoadLibraryEx(...)` calls when the referenced local library exists
 
 ## Performance Reality
 
@@ -248,6 +255,7 @@ python analyzer.py /path/to/project --trace-cpp build/my_binary
 ```
 
 On Linux this captures local loader edges and symbol bindings via loader diagnostics. On macOS it captures local loader edges. On Windows it executes the entry binary normally and adds scoped local DLL dependency edges from the executable's PE import table. Windows tracing is loader/dependency oriented; it does not claim deep native tracing, syscall tracing, or universal `LoadLibrary` discovery.
+Static C / C++ extraction also adds graph edges for literal local `dlopen(...)`, `LoadLibrary(...)`, and `LoadLibraryEx(...)` library paths when the target file exists in the repo.
 
 ### Frontend
 
@@ -323,9 +331,12 @@ The diff reports added and removed nodes, added and removed dependency edges, an
 
 The `examples/` directory contains lightweight, deterministic material for a judge or reviewer:
 
+- `examples/orbits-demo.png`: screenshot of the visualizer
 - `examples/orbits.config.example.json`: sample `.orbits.json` config shape
 - `examples/README.md`: install, analyze, check, reports, diff, and runtime-boundary command transcript
 - `examples/fixtures/*.json`: tiny graph snapshots for `orbits --diff`
+
+![Orbits demo screenshot](examples/orbits-demo.png)
 
 ### Config, Reports, and Check Mode
 
@@ -416,6 +427,16 @@ For repository-specific CI overrides without changing config files, set a GitHub
 Orphan and island thresholds use actionable dead files after `intentional_files` suppressions.
 Health uses the graph summary score.
 
+### PyPI Release Readiness
+
+The repository includes `.github/workflows/publish.yml` for Python packaging:
+
+- `workflow_dispatch` builds the source distribution and wheel, then runs `twine check`
+- GitHub Release publishing uploads to PyPI through Trusted Publishing
+- the PyPI project target is `orbits-codebase`, which installs the `orbits` CLI command
+
+Before the first real release, configure a PyPI Trusted Publisher for this GitHub repository and the `pypi` environment. No API token is required when Trusted Publishing is configured correctly.
+
 Load a graph directly in the browser UI:
 
 - open the served visualizer
@@ -471,8 +492,9 @@ Intentional suppressions are stored in:
 - `entrypoints.py`: manifest and conventional entrypoint detection
 - `lang_dispatch.py`: crawl orchestration, worker dispatch, language support metadata
 - `worker.py`: per-language extraction and resolution execution
-- `extractors/`: tree-sitter and fallback extractors
+- `extractors/`: tree-sitter, web, and fallback extractors
 - `resolvers/`: language-specific resolution logic
+- `orbits_assets/`: packaged visualizer assets for installed CLI serving
 - `graph_engine.py`: enrichment, waste detection, summary metrics
 - `graph_diff.py`: graph snapshot comparison helper and standalone diff CLI
 - `visualizer.html`: bundled shell/UI
@@ -510,8 +532,10 @@ The repo currently includes regression coverage for:
 - Go module resolution
 - C / C++ include resolution
 - Java and Kotlin package resolution
+- HTML/CSS/static asset graph extraction
 - end-to-end graph shape
 - graph dependency diff summaries
+- installable CLI metadata and packaged visualizer assets
 - synthetic benchmark graph generation
 - Playwright Stage 1 browser coverage for the visualizer, including runtime edge mode switching
 
@@ -533,6 +557,7 @@ npm run test:e2e -- --reporter=line
 - Python runtime tracing only sees code paths that actually execute
 - Python runtime tracing is time-bounded; timed-out sessions produce partial traces
 - Node runtime tracing is shipped as a backend tracer for JavaScript entrypoints
+- HTML/CSS analysis resolves static references, but it does not execute browser JavaScript or infer DOM nodes created at runtime
 - Browser-side worker analysis is not guaranteed to match backend analysis exactly
 - Large graphs are handled more safely now, but browser and machine limits still matter
 - Git blame and file actions depend on local environment support and repository state

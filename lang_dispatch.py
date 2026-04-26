@@ -27,6 +27,9 @@ LANG_DISPLAY = {
     'javascript': 'JavaScript',
     'typescript': 'TypeScript',
     'tsx': 'TSX',
+    'html': 'HTML',
+    'css': 'CSS',
+    'asset': 'Asset',
     'go': 'Go',
     'c': 'C',
     'cpp': 'C/C++',
@@ -40,6 +43,8 @@ EXT_TO_LANG = {
     '.js': 'javascript', '.mjs': 'javascript', '.cjs': 'javascript',
     '.ts': 'typescript', '.mts': 'typescript', '.cts': 'typescript',
     '.tsx': 'tsx', '.jsx': 'tsx',
+    '.html': 'html', '.htm': 'html',
+    '.css': 'css', '.scss': 'css', '.sass': 'css', '.less': 'css',
     '.go': 'go',
     '.c': 'c',
     '.h': 'cpp', '.hh': 'cpp', '.hpp': 'cpp', '.hxx': 'cpp', '.cc': 'cpp', '.cpp': 'cpp', '.cxx': 'cpp',
@@ -206,6 +211,9 @@ def _detect_language_support() -> dict[str, dict[str, str | bool]]:
         'javascript': {'available': js_grammar is not None, 'reason': ''},
         'typescript': {'available': js_grammar is not None, 'reason': ''},
         'tsx': {'available': js_grammar is not None, 'reason': ''},
+        'html': {'available': True, 'reason': ''},
+        'css': {'available': True, 'reason': ''},
+        'asset': {'available': True, 'reason': ''},
         'go': {'available': go_grammar is not None, 'reason': ''},
         'c': {'available': c_grammars is not None, 'reason': ''},
         'cpp': {'available': c_grammars is not None, 'reason': ''},
@@ -365,6 +373,7 @@ def extract_all(root: Path, verbose: bool = True, config: dict | None = None) ->
         if res.error:
             log(f"  WARNING: {res.language} worker error: {res.error}")
             continue
+        nodes.update(res.extra_nodes)
         all_edges.extend(res.edges)
         for key, value in res.stats.items():
             total_stats[key] = total_stats.get(key, 0) + value
@@ -394,6 +403,9 @@ def extract_all(root: Path, verbose: bool = True, config: dict | None = None) ->
     total_imports = sum(total_stats.values())
     pct = round(total_stats['local'] / total_imports * 100, 1) if total_imports else 0.0
     elapsed = time.time() - t_start
+    languages = list(buckets.keys())
+    if any(node.get('language') == 'asset' for node in nodes.values()) and 'asset' not in languages:
+        languages.append('asset')
 
     log(
         f"  Imports:   {total_imports} total - "
@@ -416,7 +428,7 @@ def extract_all(root: Path, verbose: bool = True, config: dict | None = None) ->
             'root': str(root),
             'total_files': len(nodes),
             'total_edges': len(unique_edges),
-            'languages': list(buckets.keys()),
+            'languages': languages,
             'import_stats': total_stats,
             'package_name': resolver_config.get('py_package_name', ''),
             'phase': 3,

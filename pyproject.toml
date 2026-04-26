@@ -33,14 +33,18 @@ py-modules = [
   "graph_diff",
   "graph_engine",
   "lang_dispatch",
+  "orbits",
   "path_utils",
   "resolver",
   "runtime_env",
   "runtime_trace",
   "worker",
 ]
-include-package-data = false
+include-package-data = true
 
 [tool.setuptools.packages.find]
-include = ["extractors", "extractors.*", "resolvers", "resolvers.*"]
+include = ["extractors", "extractors.*", "resolvers", "resolvers.*", "orbits_assets"]
 exclude = ["tests*", "test_repo*", "e2e*"]
+
+[tool.setuptools.package-data]
+orbits_assets = ["visualizer.html", "visualizer_app.js", "visualizer_worker.js", "visualizer.css"]

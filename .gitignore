@@ -72,6 +72,8 @@ __MACOSX/
 .orbits_cache.json
 .orbits_cache_benchmark.json
 graph.json
+*.graph.json
+*-orbits-server.*.log
 test-results/
 playwright-report/
 

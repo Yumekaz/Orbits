@@ -7,6 +7,7 @@ from __future__ import annotations
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import unquote, urlparse
 
 from path_utils import relative_to_root
 
@@ -14,6 +15,7 @@ from path_utils import relative_to_root
 @dataclass
 class WorkerResult:
     language: str
+    extra_nodes: dict[str, dict] = field(default_factory=dict)
     edges: list[dict] = field(default_factory=list)
     cache_updates: dict[str, dict] = field(default_factory=dict)
     stats: dict[str, int] = field(default_factory=dict)
@@ -39,12 +41,15 @@ def _run(language, file_strs, root_str, cache_data, resolver_config):
     from extractors.js_extractor import JsExtractor, TsExtractor, TsxExtractor
     from extractors.jvm_extractor import JavaExtractor, KotlinExtractor
     from extractors.python_extractor import PythonExtractor
+    from extractors.web_extractor import CssExtractor, HtmlExtractor
 
     extractor_map = {
         'python': PythonExtractor(),
         'javascript': JsExtractor(),
         'typescript': TsExtractor(),
         'tsx': TsxExtractor(),
+        'html': HtmlExtractor(),
+        'css': CssExtractor(),
         'go': GoExtractor(),
         'c': CExtractor(),
         'cpp': CppExtractor(),
@@ -109,7 +114,7 @@ def _resolve_and_add(imp_dict, language, filepath, root, resolver, known_nodes, 
     kind_key = kind.lower()
     result.stats[kind_key] = result.stats.get(kind_key, 0) + 1
 
-    if kind != 'LOCAL' or not resolved_paths:
+    if kind not in ('LOCAL', 'ASSET') or not resolved_paths:
         return
 
     if isinstance(resolved_paths, str):
@@ -118,7 +123,11 @@ def _resolve_and_add(imp_dict, language, filepath, root, resolver, known_nodes, 
         targets = list(resolved_paths)
 
     for target in targets:
-        if target and target in known_nodes:
+        if not target:
+            continue
+        if target in known_nodes or kind == 'ASSET':
+            if target not in known_nodes:
+                _add_asset_node(result, root, target)
             result.edges.append({
                 'source': imp_dict['source_file'],
                 'target': target,
@@ -126,6 +135,26 @@ def _resolve_and_add(imp_dict, language, filepath, root, resolver, known_nodes, 
                 'line': imp_dict['line'],
                 'language': language,
             })
+
+
+def _add_asset_node(result: WorkerResult, root: Path, relpath: str) -> None:
+    if relpath in result.extra_nodes:
+        return
+    path = (root / relpath).resolve()
+    try:
+        stat = path.stat()
+    except OSError:
+        return
+    result.extra_nodes[relpath] = {
+        'id': relpath,
+        'filepath': relpath,
+        'name': path.name,
+        'language': 'asset',
+        'asset': True,
+        'size': stat.st_size,
+        'mtime': round(stat.st_mtime),
+        'dir': relative_to_root(path.parent, root) if path.parent != root else '.',
+    }
 
 
 def _make_resolver(language: str, root: Path, config: dict):
@@ -171,6 +200,10 @@ def _make_resolver(language: str, root: Path, config: dict):
 
         return resolve_js
 
+    if language in ('html', 'css'):
+        resolver = WebResolver(root)
+        return lambda imp_dict, lang, filepath, root: resolver.resolve(imp_dict.get('raw', ''), from_file=filepath)
+
     if language == 'go':
         from resolvers.go_resolver import GoResolver
 
@@ -200,14 +233,98 @@ def _make_resolver(language: str, root: Path, config: dict):
         resolver = JvmResolver(root, jvm_cfg)
         return lambda imp_dict, lang, filepath, root: resolver.resolve(imp_dict.get('raw', ''))
 
+    web_resolver = WebResolver(root)
+
     def resolve_generic(imp_dict, lang, filepath, root):
         raw = imp_dict.get('raw', '')
         if imp_dict.get('is_relative'):
-            base = (filepath.parent / raw).resolve()
-            if base.exists():
-                rel = relative_to_root(base, root)
-                if rel:
-                    return rel, 'LOCAL'
+            rel, kind = web_resolver.resolve(raw, from_file=filepath)
+            if rel:
+                return rel, kind
         return None, 'UNKNOWN'
 
     return resolve_generic
+
+
+class WebResolver:
+    source_extensions = {
+        '.html', '.htm',
+        '.css', '.scss', '.sass', '.less',
+        '.js', '.mjs', '.cjs', '.jsx',
+        '.ts', '.mts', '.cts', '.tsx',
+    }
+    asset_extensions = {
+        '.avif', '.bmp', '.gif', '.ico', '.jpeg', '.jpg', '.png', '.svg', '.webp',
+        '.eot', '.otf', '.ttf', '.woff', '.woff2',
+        '.json', '.map', '.pdf', '.txt', '.xml',
+        '.mp3', '.mp4', '.ogg', '.wav', '.webm',
+        '.wasm',
+    }
+
+    def __init__(self, root: Path):
+        self.root = root.resolve()
+
+    def resolve(self, raw: str, from_file: Path) -> tuple[str | None, str]:
+        cleaned = self._clean(raw)
+        if not cleaned:
+            return None, 'UNKNOWN'
+        if self._is_external(cleaned):
+            return None, 'EXTERNAL'
+
+        candidates = self._candidate_paths(cleaned, from_file)
+        for candidate in candidates:
+            probed = self._probe(candidate)
+            if not probed:
+                continue
+            rel = relative_to_root(probed, self.root)
+            if not rel:
+                continue
+            rel = rel.replace('\\', '/')
+            suffix = probed.suffix.lower()
+            if suffix in self.source_extensions:
+                return rel, 'LOCAL'
+            if suffix in self.asset_extensions:
+                return rel, 'ASSET'
+            return rel, 'ASSET'
+        return None, 'UNKNOWN'
+
+    def _clean(self, raw: str) -> str:
+        value = unquote(str(raw or '').strip().strip('"\''))
+        if not value or value.startswith('#'):
+            return ''
+        parsed = urlparse(value)
+        if parsed.scheme and parsed.scheme.lower() != 'file':
+            return value
+        path = parsed.path or value
+        return path.replace('\\', '/').strip()
+
+    def _is_external(self, value: str) -> bool:
+        lowered = value.lower()
+        if lowered.startswith(('//', 'data:', 'mailto:', 'tel:', 'javascript:', 'blob:')):
+            return True
+        parsed = urlparse(value)
+        return bool(parsed.scheme and parsed.scheme.lower() not in {'file'})
+
+    def _candidate_paths(self, value: str, from_file: Path) -> list[Path]:
+        if value.startswith('/'):
+            return [(self.root / value.lstrip('/')).resolve()]
+        path = Path(value)
+        if path.is_absolute():
+            return [path.resolve()]
+        return [(from_file.parent / value).resolve()]
+
+    def _probe(self, base: Path) -> Path | None:
+        if base.exists():
+            if base.is_dir():
+                for name in ('index.html', 'index.htm'):
+                    candidate = base / name
+                    if candidate.exists():
+                        return candidate
+                return None
+            return base
+        if not base.suffix:
+            for suffix in ('.html', '.htm', '.css', '.js', '.mjs', '.ts'):
+                candidate = base.with_suffix(suffix)
+                if candidate.exists():
+                    return candidate
+        return None

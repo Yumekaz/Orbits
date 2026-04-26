@@ -22,6 +22,7 @@ import subprocess
 import sys
 import threading
 import webbrowser
+from importlib import resources
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
@@ -678,8 +679,19 @@ def evaluate_check_thresholds(graph: dict, thresholds: dict) -> list[str]:
     return failures
 
 
+def _visualizer_path() -> Path:
+    source_tree_path = Path(__file__).with_name('visualizer.html')
+    if source_tree_path.exists():
+        return source_tree_path
+    try:
+        packaged_path = Path(str(resources.files('orbits_assets').joinpath('visualizer.html')))
+    except Exception:
+        return source_tree_path
+    return packaged_path
+
+
 def serve(output_path: Path, port: int = 8765):
-    viz = Path(__file__).with_name('visualizer.html')
+    viz = _visualizer_path()
     if not viz.exists():
         print('ERROR: visualizer.html not found', file=sys.stderr)
         return

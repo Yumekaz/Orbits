@@ -95,6 +95,10 @@ class CFamilyResolver:
         if kind == 'system_include':
             return None, 'STDLIB'
 
+        if kind == 'dynamic_load':
+            resolved = self._resolve_dynamic_load(raw, from_file)
+            return (resolved, 'ASSET') if resolved else (None, 'UNKNOWN')
+
         search_dirs = [from_file.parent]
         for include_dir in self.config.include_dirs:
             if include_dir not in search_dirs:
@@ -121,3 +125,27 @@ class CFamilyResolver:
 
     def _rel(self, path: Path) -> Optional[str]:
         return relative_to_root(path, self.root)
+
+    def _resolve_dynamic_load(self, raw: str, from_file: Path) -> Optional[str]:
+        value = raw.strip().strip('"\'')
+        if not value or value.startswith(('$', '%')):
+            return None
+        raw_path = Path(value)
+        candidates: list[Path] = []
+        if raw_path.is_absolute():
+            candidates.append(raw_path)
+        else:
+            candidates.append((from_file.parent / value).resolve())
+            candidates.append((self.root / value).resolve())
+            for include_dir in self.config.include_dirs:
+                candidates.append((include_dir / value).resolve())
+
+        seen: set[str] = set()
+        for candidate in candidates:
+            key = str(candidate)
+            if key in seen:
+                continue
+            seen.add(key)
+            if candidate.exists() and candidate.is_file():
+                return self._rel(candidate)
+        return None

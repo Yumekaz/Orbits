@@ -13,8 +13,9 @@ from path_utils import relative_to_root
 
 
 _SOURCE_EXTENSIONS = {'.js', '.mjs', '.cjs', '.jsx', '.ts', '.mts', '.cts', '.tsx'}
+_STYLE_EXTENSIONS = {'.css', '.scss', '.sass', '.less'}
 _ASSET_EXTENSIONS = {
-    '.css', '.scss', '.sass', '.less', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.ico',
+    '.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.ico',
     '.json', '.wasm', '.mp4', '.mp3', '.wav', '.ttf', '.woff', '.woff2', '.eot',
 }
 
@@ -134,8 +135,12 @@ class JsResolver:
 
     def resolve(self, raw: str, from_file: Path) -> tuple[Optional[str], str]:
         suffix = Path(raw.split('?', 1)[0]).suffix.lower()
+        if suffix in _STYLE_EXTENSIONS:
+            path = self._resolve_relative_style(raw, from_file)
+            return (path, 'LOCAL') if path else (None, 'ASSET')
         if suffix in _ASSET_EXTENSIONS:
-            return None, 'ASSET'
+            path = self._resolve_relative_asset(raw, from_file)
+            return (path, 'ASSET') if path else (None, 'ASSET')
 
         cache_key = f'{from_file}:{raw}'
         if cache_key in self._cache:
@@ -177,6 +182,24 @@ class JsResolver:
 
     def _resolve_relative(self, raw: str, from_file: Path) -> Optional[str]:
         return self._probe_extensions((from_file.parent / raw).resolve())
+
+    def _resolve_relative_style(self, raw: str, from_file: Path) -> Optional[str]:
+        clean = raw.split('?', 1)[0].split('#', 1)[0]
+        if not clean.startswith(('./', '../', '/')):
+            return None
+        base = (self.root / clean.lstrip('/')).resolve() if clean.startswith('/') else (from_file.parent / clean).resolve()
+        if base.suffix.lower() in _STYLE_EXTENSIONS and base.exists():
+            return self._rel(base)
+        return None
+
+    def _resolve_relative_asset(self, raw: str, from_file: Path) -> Optional[str]:
+        clean = raw.split('?', 1)[0].split('#', 1)[0]
+        if not clean.startswith(('./', '../', '/')):
+            return None
+        base = (self.root / clean.lstrip('/')).resolve() if clean.startswith('/') else (from_file.parent / clean).resolve()
+        if base.exists() and base.is_file():
+            return self._rel(base)
+        return None
 
     def _resolve_from_root(self, path_str: str) -> Optional[str]:
         return self._probe_extensions((self.root / path_str).resolve())

@@ -2,6 +2,12 @@
 
 These examples are intentionally small so a judge can run them quickly and compare the output by eye.
 
+## Visual Evidence
+
+![Orbits visualizer demo](orbits-demo.png)
+
+The image above is a committed visual proof artifact from the Playwright baseline suite. Regenerate visual baselines with `npm run test:e2e:visual:update` when intentionally changing the UI.
+
 ## Install the CLI
 
 From the repo root:
@@ -9,9 +15,10 @@ From the repo root:
 ```powershell
 python -m pip install -e .
 orbits --help
+python -m orbits --help
 ```
 
-The editable install exposes the `orbits` console script while keeping the bundled visualizer assets in the source tree for `--serve`.
+The package exposes the `orbits` console script and bundles the visualizer assets required by `orbits --serve`.
 
 ## Analyze
 
@@ -115,3 +122,5 @@ orbits path\to\project --trace-cpp build\my_binary --runtime-output demo-output/
 ```
 
 Runtime edges are overlays. They show executed Python/Node paths or scoped native loader/import dependencies, but they do not replace static analysis and they do not rewrite static health, cycle, depth, or waste metrics.
+
+Static C/C++ extraction also recognizes literal local `dlopen(...)`, `LoadLibrary(...)`, and `LoadLibraryEx(...)` references when the library file exists in the repository.
