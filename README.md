@@ -47,13 +47,33 @@ That writes `graph.json` in the repo root by default.
 .\.venv\Scripts\python.exe analyzer.py . --serve
 ```
 
+## Installable CLI
+
+Orbits also has minimal Python packaging metadata for local evaluation:
+
+```powershell
+python -m pip install -e .
+orbits . -o graph.json
+orbits . --serve
+orbits --diff C:/temp/old-graph.json C:/temp/new-graph.json
+```
+
+The console script maps to the existing `analyzer:main` entry point, so the legacy `python analyzer.py ...` form still works. Use editable install from this repo for demos that need `--serve`, because the current visualizer assets are bundled beside the source files.
+
 ## What It Does
 
 - Crawls a project tree while skipping common noise
 - Extracts imports/includes for multiple languages
 - Resolves project-local dependencies
 - Computes cycles, islands, orphans, depth, health, and summary stats
+- Detects common project entrypoints so launch files are not reported as dead just because nothing imports them
 - Serves an interactive visualizer for the generated graph
+
+## Entrypoint Detection
+
+Orbits marks detected launch files as `ENTRY` even when they have no outbound imports. Detection currently uses `package.json` fields/scripts, Python project script metadata, `setup.cfg` / `setup.py` console scripts, Dockerfile `CMD` / `ENTRYPOINT` hints, common Makefile run targets, and conventional names such as `main.py`, `app.py`, `server.py`, `manage.py`, `index.js` / `index.ts`, and Go `main.go`.
+
+Detected entries are stored in `meta.entrypoints`, and each matching node gets `entrypoint: true` plus `entrypoint_reasons` for future UI/report use.
 
 ## Supported Languages
 
@@ -299,6 +319,14 @@ python analyzer.py --diff C:/temp/old-graph.json C:/temp/new-graph.json --diff-j
 
 The diff reports added and removed nodes, added and removed dependency edges, and waste count changes. Edge comparison uses `source -> target`, so line-number-only import churn does not count as a dependency change.
 
+### Demo Evidence
+
+The `examples/` directory contains lightweight, deterministic material for a judge or reviewer:
+
+- `examples/orbits.config.example.json`: sample `.orbits.json` config shape
+- `examples/README.md`: install, analyze, check, reports, diff, and runtime-boundary command transcript
+- `examples/fixtures/*.json`: tiny graph snapshots for `orbits --diff`
+
 ### Config, Reports, and Check Mode
 
 Orbits reads optional project-root config from `codegraph.config.json` and `.orbits.json`.
@@ -343,11 +371,45 @@ Write explicit dead-file reports:
 python analyzer.py /path/to/project --dead-report-md dead-files.md --dead-report-csv dead-files.csv
 ```
 
+When the analyzed root is inside a Git worktree, each dead-file item is also
+annotated with cheap history context: last touch age/timestamp, commit count,
+line churn, top authors, and a deterministic confidence score with reasons.
+Runtime overlays are folded into that score when present, so a fresh runtime
+touch lowers confidence while an untouched fresh trace raises it.
+
 Run a deterministic CI-style check:
 
 ```bash
 python analyzer.py /path/to/project --check
 python analyzer.py /path/to/project --check --max-orphans 0 --max-islands 1 --min-health 90
+```
+
+### GitHub Actions and Thresholds
+
+The included Orbits workflow runs the same CLI check on pushes and pull requests:
+
+```bash
+python analyzer.py . -o orbits-artifacts/graph.json --dead-report-md orbits-artifacts/dead-files.md --dead-report-csv orbits-artifacts/dead-files.csv --check
+```
+
+It uploads `graph.json`, `dead-files.md`, `dead-files.csv`, check logs, and the generated PR comment body as the `orbits-report` artifact. On pull requests, it also tries to build a base-branch graph diff and update a sticky PR comment. Comment posting is best-effort; the check artifacts are still produced when the token cannot write comments.
+
+Configure thresholds in `codegraph.config.json` or `.orbits.json`:
+
+```json
+{
+  "check": {
+    "max_orphans": 0,
+    "max_islands": 1,
+    "min_health": 90
+  }
+}
+```
+
+For repository-specific CI overrides without changing config files, set a GitHub Actions repository variable named `ORBITS_CHECK_ARGS`, for example:
+
+```text
+--max-orphans 0 --max-islands 1 --min-health 90
 ```
 
 `--check` exits with code `2` when a configured or flag-provided threshold is exceeded.
@@ -406,6 +468,7 @@ Intentional suppressions are stored in:
 - `analyzer.py`: CLI entry point, HTTP serving, file actions, metadata APIs
 - `runtime_trace.py`: Python + Node runtime trace orchestration, artifact writer, runtime merge helpers
 - `node_runtime_trace.cjs`: Node.js runtime tracer child process and artifact writer
+- `entrypoints.py`: manifest and conventional entrypoint detection
 - `lang_dispatch.py`: crawl orchestration, worker dispatch, language support metadata
 - `worker.py`: per-language extraction and resolution execution
 - `extractors/`: tree-sitter and fallback extractors

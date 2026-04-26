@@ -21,7 +21,7 @@ from typing import Any
 # ── Classification constants ───────────────────────────────────────────────
 
 class NodeClass:
-    ENTRY     = 'ENTRY'      # no inbound, has outbound — execution starts here
+    ENTRY     = 'ENTRY'      # structural or detected execution start
     LEAF      = 'LEAF'       # has inbound, no outbound — utils, constants
     CONNECTED = 'CONNECTED'  # has both — the glue code
     ORPHAN    = 'ORPHAN'     # no inbound, no outbound — genuinely dead
@@ -89,19 +89,24 @@ def _build_adjacency(
 def classify_nodes(
     nodes: list[dict],
     edges: list[dict],
+    entrypoint_ids: set[str] | None = None,
 ) -> dict[str, str]:
     """
     Returns {node_id: NodeClass} for every node.
-    Order of precedence: GENERATED → TEST → structural classification.
+    Order of precedence: GENERATED -> detected ENTRY -> TEST -> structural classification.
     """
     node_ids = [n['id'] for n in nodes]
     outbound, inbound = _build_adjacency(node_ids, edges)
+    entrypoint_ids = entrypoint_ids or set()
 
     result: dict[str, str] = {}
 
     for nid in node_ids:
         if _is_generated(nid):
             result[nid] = NodeClass.GENERATED
+            continue
+        if nid in entrypoint_ids:
+            result[nid] = NodeClass.ENTRY
             continue
         if _is_test(nid):
             result[nid] = NodeClass.TEST
@@ -116,7 +121,7 @@ def classify_nodes(
         }
 
     for nid in node_ids:
-        if nid in result: # Already classified as TEST or GENERATED
+        if nid in result: # Already classified as GENERATED, ENTRY, or TEST
             continue
 
         has_out = bool(outbound[nid])
@@ -131,6 +136,25 @@ def classify_nodes(
         else:
             result[nid] = NodeClass.CONNECTED
 
+    return result
+
+
+def _entrypoint_reason_map(meta: dict) -> dict[str, list[dict]]:
+    result: dict[str, list[dict]] = {}
+    entrypoints = meta.get('entrypoints', [])
+    if not isinstance(entrypoints, list):
+        return result
+    for item in entrypoints:
+        if not isinstance(item, dict):
+            continue
+        node_id = str(item.get('id', '')).replace('\\', '/').strip('/')
+        if not node_id:
+            continue
+        reasons = item.get('reasons', [])
+        if isinstance(reasons, list):
+            result[node_id] = [reason for reason in reasons if isinstance(reason, dict)]
+        else:
+            result[node_id] = []
     return result
 
 
@@ -346,9 +370,11 @@ def analyze_graph(raw: dict) -> dict:
     nodes: list[dict] = raw.get('nodes', [])
     edges: list[dict] = raw.get('edges', [])
     meta:  dict       = raw.get('meta', {})
+    entrypoint_reasons = _entrypoint_reason_map(meta)
+    entrypoint_ids = set(entrypoint_reasons)
 
     # ── Run all analyses ───────────────────────────────────────────────────
-    classifications = classify_nodes(nodes, edges)
+    classifications = classify_nodes(nodes, edges, entrypoint_ids=entrypoint_ids)
     cycles          = find_cycles(nodes, edges)
     islands         = find_islands(nodes, edges, classifications)
     depths          = compute_depths(nodes, edges, classifications)
@@ -379,6 +405,8 @@ def analyze_graph(raw: dict) -> dict:
             'classification': classifications.get(nid, NodeClass.ORPHAN),
             'depth':          depths.get(nid, -1),
             'island_id':      island_map.get(nid, -1),
+            'entrypoint':     nid in entrypoint_ids,
+            'entrypoint_reasons': entrypoint_reasons.get(nid, []),
         })
 
     # ── Build waste list (actionable dead files) ───────────────────────────

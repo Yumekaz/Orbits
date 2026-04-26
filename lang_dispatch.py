@@ -18,6 +18,7 @@ from pathlib import Path
 
 from cache import CachedFile, ImportCache
 from crawler import SKIP_DIRS, SKIP_EXTENSIONS
+from entrypoints import detect_entrypoints
 from path_utils import relative_to_root
 from worker import WorkerResult, run_worker
 
@@ -300,7 +301,9 @@ def extract_all(root: Path, verbose: bool = True, config: dict | None = None) ->
                 'dir': relative_to_root(filepath.parent, root) if filepath.parent != root else '.',
             }
 
-    resolver_config = _build_resolver_config(root, list(nodes.keys()), config=config)
+    node_ids = list(nodes.keys())
+    resolver_config = _build_resolver_config(root, node_ids, config=config)
+    entrypoints = detect_entrypoints(root, node_ids)
 
     if resolver_config.get('py_package_name'):
         log(f"  Package:   {resolver_config['py_package_name']}")
@@ -312,6 +315,8 @@ def extract_all(root: Path, verbose: bool = True, config: dict | None = None) ->
         log(f"  C include: {include_dir}")
     for src_root in resolver_config.get('jvm_src_roots', []):
         log(f"  JVM src:   {src_root}")
+    if entrypoints:
+        log(f"  Entrypoints: {len(entrypoints)} detected")
 
     cache_snapshot: dict[str, dict] = {}
     for files in buckets.values():
@@ -419,6 +424,7 @@ def extract_all(root: Path, verbose: bool = True, config: dict | None = None) ->
             'language_support': language_support,
             'unsupported_languages': unsupported_languages,
             'intentional_files': intentional_files,
+            'entrypoints': entrypoints,
             'config': {
                 'files': list(config.get('files', [])) if isinstance(config, dict) else [],
                 'ignore': dict(config.get('ignore', {})) if isinstance(config, dict) else {},

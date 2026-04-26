@@ -1,0 +1,169 @@
+name: Orbits
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: orbits-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ORBITS_ARTIFACT_DIR: orbits-artifacts
+  ORBITS_CHECK_ARGS: ${{ vars.ORBITS_CHECK_ARGS }}
+
+jobs:
+  check:
+    name: Orbits check
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install parser runtime packages
+        run: >
+          python -m pip install
+          tree-sitter
+          tree-sitter-python
+          tree-sitter-javascript
+          tree-sitter-typescript
+          tree-sitter-go
+          tree-sitter-c
+          tree-sitter-cpp
+          tree-sitter-java
+          tree-sitter-kotlin
+
+      - name: Run Orbits check
+        id: orbits
+        run: |
+          mkdir -p "$ORBITS_ARTIFACT_DIR"
+          set +e
+          python analyzer.py . \
+            -o "$ORBITS_ARTIFACT_DIR/graph.json" \
+            --dead-report-md "$ORBITS_ARTIFACT_DIR/dead-files.md" \
+            --dead-report-csv "$ORBITS_ARTIFACT_DIR/dead-files.csv" \
+            --check \
+            ${ORBITS_CHECK_ARGS} \
+            >"$ORBITS_ARTIFACT_DIR/orbits-check.out" \
+            2>"$ORBITS_ARTIFACT_DIR/orbits-check.err"
+          status=$?
+          echo "$status" > "$ORBITS_ARTIFACT_DIR/orbits-check.exit"
+          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
+          cat "$ORBITS_ARTIFACT_DIR/orbits-check.err"
+          exit 0
+
+      - name: Checkout pull request base for diff
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: orbits-baseline
+
+      - name: Generate pull request graph diff
+        if: github.event_name == 'pull_request'
+        run: |
+          set +e
+          python analyzer.py orbits-baseline \
+            -o "$ORBITS_ARTIFACT_DIR/base-graph.json" \
+            >"$ORBITS_ARTIFACT_DIR/orbits-base.out" \
+            2>"$ORBITS_ARTIFACT_DIR/orbits-base.err"
+          base_status=$?
+          echo "$base_status" > "$ORBITS_ARTIFACT_DIR/orbits-base.exit"
+          if [ "$base_status" -eq 0 ] && [ -f "$ORBITS_ARTIFACT_DIR/graph.json" ]; then
+            python analyzer.py \
+              --diff "$ORBITS_ARTIFACT_DIR/base-graph.json" "$ORBITS_ARTIFACT_DIR/graph.json" \
+              --diff-json \
+              >"$ORBITS_ARTIFACT_DIR/graph-diff.json" \
+              2>"$ORBITS_ARTIFACT_DIR/graph-diff.err"
+          else
+            cat "$ORBITS_ARTIFACT_DIR/orbits-base.err"
+          fi
+          exit 0
+
+      - name: Build PR comment body
+        if: always()
+        run: |
+          python scripts/orbits_pr_comment.py \
+            --graph "$ORBITS_ARTIFACT_DIR/graph.json" \
+            --diff-json "$ORBITS_ARTIFACT_DIR/graph-diff.json" \
+            --dead-report-md "$ORBITS_ARTIFACT_DIR/dead-files.md" \
+            --check-exit-code-file "$ORBITS_ARTIFACT_DIR/orbits-check.exit" \
+            --check-output "$ORBITS_ARTIFACT_DIR/orbits-check.err" \
+            --check-output "$ORBITS_ARTIFACT_DIR/orbits-check.out" \
+            --artifact-name orbits-report \
+            --output "$ORBITS_ARTIFACT_DIR/pr-comment.md"
+
+      - name: Add Orbits summary
+        if: always()
+        run: |
+          if [ -f "$ORBITS_ARTIFACT_DIR/pr-comment.md" ]; then
+            cat "$ORBITS_ARTIFACT_DIR/pr-comment.md" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload Orbits artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbits-report
+          path: ${{ env.ORBITS_ARTIFACT_DIR }}
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Post or update PR comment
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- orbits-pr-comment -->';
+            const body = fs.readFileSync(`${process.env.ORBITS_ARTIFACT_DIR}/pr-comment.md`, 'utf8');
+            const { owner, repo } = context.repo;
+            const issue_number = context.payload.pull_request.number;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner,
+              repo,
+              issue_number,
+              per_page: 100,
+            });
+            const existing = comments.find((comment) =>
+              comment.user?.type === 'Bot' && comment.body?.includes(marker)
+            );
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number,
+                body,
+              });
+            }
+
+      - name: Fail when Orbits check fails
+        if: always()
+        run: |
+          status="$(cat "$ORBITS_ARTIFACT_DIR/orbits-check.exit" 2>/dev/null || echo 1)"
+          if [ "$status" != "0" ]; then
+            exit "$status"
+          fi

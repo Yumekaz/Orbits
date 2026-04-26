@@ -25,6 +25,7 @@ import webbrowser
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from git_intel import enrich_dead_code_confidence, flatten_waste_for_report
 from graph_diff import diff_graph_files, format_graph_diff
 from graph_engine import analyze_graph
 from lang_dispatch import extract_all
@@ -504,7 +505,7 @@ def run(
             overlays = [(trace, artifact_path, True) for trace, artifact_path, *_rest in overlays]
         raw = merge_runtime_traces(raw, overlays)
 
-    enriched = analyze_graph(raw)
+    enriched = enrich_dead_code_confidence(analyze_graph(raw), root_path)
 
     if verbose:
         summary = enriched['summary']
@@ -579,15 +580,29 @@ def format_dead_report_markdown(graph: dict) -> str:
         return '\n'.join(lines) + '\n'
 
     lines.extend([
-        '| Path | Classification | Size | Island |',
-        '| --- | --- | ---: | ---: |',
+        '| Path | Classification | Size | Island | Confidence | Reasons | Git age | Git churn | Runtime |',
+        '| --- | --- | ---: | ---: | --- | --- | ---: | ---: | --- |',
     ])
     for item in waste:
+        flat = flatten_waste_for_report(item)
+        runtime_bits = []
+        if flat.get('runtime_available') is True:
+            runtime_bits.append('touched' if flat.get('runtime_touched') else 'not touched')
+            if flat.get('runtime_stale'):
+                runtime_bits.append('stale')
+        else:
+            runtime_bits.append('unavailable')
+        confidence = f"{flat.get('confidence_score', '')} {flat.get('confidence_level', '')}".strip()
         lines.append(
             f"| `{_markdown_cell(item.get('id', ''))}` "
             f"| {_markdown_cell(item.get('classification', ''))} "
             f"| {int(item.get('size', 0) or 0)} "
-            f"| {item.get('island_id', -1)} |"
+            f"| {item.get('island_id', -1)} "
+            f"| {_markdown_cell(confidence)} "
+            f"| {_markdown_cell(flat.get('confidence_reasons', ''))} "
+            f"| {_markdown_cell(flat.get('git_age_days', ''))} "
+            f"| {_markdown_cell(flat.get('git_churn_count', ''))} "
+            f"| {_markdown_cell(', '.join(runtime_bits))} |"
         )
     return '\n'.join(lines) + '\n'
 
@@ -603,18 +618,38 @@ def write_dead_report_markdown(graph: dict, output: str | Path) -> None:
 
 
 def write_dead_report_csv(graph: dict, output: str | Path) -> None:
-    fieldnames = ['id', 'name', 'classification', 'size', 'island_id']
+    fieldnames = [
+        'id',
+        'name',
+        'classification',
+        'size',
+        'island_id',
+        'confidence_score',
+        'confidence_level',
+        'confidence_reasons',
+        'git_available',
+        'git_reason',
+        'git_last_touched_iso',
+        'git_age_days',
+        'git_commit_count',
+        'git_churn_count',
+        'git_top_authors',
+        'runtime_available',
+        'runtime_touched',
+        'runtime_stale',
+    ]
+    rows = [flatten_waste_for_report(item) for item in graph.get('waste', [])]
     if str(output) == '-':
         writer = csv.DictWriter(sys.stdout, fieldnames=fieldnames, extrasaction='ignore', lineterminator='\n')
         writer.writeheader()
-        writer.writerows(graph.get('waste', []))
+        writer.writerows(rows)
         return
     path = Path(output).resolve()
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open('w', encoding='utf-8', newline='') as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames, extrasaction='ignore', lineterminator='\n')
         writer.writeheader()
-        writer.writerows(graph.get('waste', []))
+        writer.writerows(rows)
 
 
 def _check_thresholds_from_args(config: dict, args) -> dict:

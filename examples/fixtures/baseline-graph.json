@@ -1,0 +1,37 @@
+{
+  "nodes": [
+    {
+      "id": "app.py",
+      "classification": "ROOT"
+    },
+    {
+      "id": "util.py",
+      "classification": "INTERNAL"
+    },
+    {
+      "id": "old.py",
+      "classification": "ORPHAN"
+    }
+  ],
+  "edges": [
+    {
+      "source": "app.py",
+      "target": "util.py"
+    }
+  ],
+  "waste": [
+    {
+      "id": "old.py",
+      "classification": "ORPHAN"
+    }
+  ],
+  "summary": {
+    "total": 3,
+    "health_score": 80
+  },
+  "meta": {
+    "root": "examples/fixtures/baseline",
+    "total_files": 3,
+    "total_edges": 1
+  }
+}

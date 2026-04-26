@@ -1,0 +1,41 @@
+{
+  "nodes": [
+    {
+      "id": "app.py",
+      "classification": "ROOT"
+    },
+    {
+      "id": "util.py",
+      "classification": "INTERNAL"
+    },
+    {
+      "id": "new.py",
+      "classification": "ORPHAN"
+    }
+  ],
+  "edges": [
+    {
+      "source": "app.py",
+      "target": "util.py"
+    },
+    {
+      "source": "app.py",
+      "target": "new.py"
+    }
+  ],
+  "waste": [
+    {
+      "id": "new.py",
+      "classification": "ORPHAN"
+    }
+  ],
+  "summary": {
+    "total": 3,
+    "health_score": 75
+  },
+  "meta": {
+    "root": "examples/fixtures/current",
+    "total_files": 3,
+    "total_edges": 2
+  }
+}

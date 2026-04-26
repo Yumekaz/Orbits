@@ -1,0 +1,40 @@
+{
+  "ignore": {
+    "dirs": [
+      "build/**",
+      "dist/**",
+      "generated/**",
+      "vendor/**"
+    ],
+    "files": [
+      "*.snapshot.py",
+      "*.min.js"
+    ]
+  },
+  "intentional_files": [
+    "scripts/manual_migration.py"
+  ],
+  "check": {
+    "max_orphans": 0,
+    "max_islands": 1,
+    "min_health": 85
+  },
+  "resolvers": {
+    "python": {
+      "src_dirs": ["src"],
+      "third_party": ["requests"]
+    },
+    "javascript": {
+      "base_url": "src",
+      "aliases": {
+        "@/*": "src/*"
+      }
+    },
+    "c_family": {
+      "include_dirs": ["include"]
+    },
+    "jvm": {
+      "src_roots": ["src/main/java", "src/main/kotlin"]
+    }
+  }
+}
