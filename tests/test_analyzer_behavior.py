@@ -55,6 +55,41 @@ class AnalyzerBehaviorTests(unittest.TestCase):
             self.assertEqual(served, [(output.resolve(), 9002)])
             self.assertTrue(output.is_file())
 
+    def test_cleanup_plan_command_writes_plan_and_graph(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            output = root / 'graph.json'
+            plan = root / 'cleanup.md'
+            graph = self._minimal_graph()
+            graph['waste'] = [{
+                'id': 'old.py',
+                'classification': 'ORPHAN',
+                'confidence_score': 88,
+                'confidence_level': 'high',
+                'runtime_context': {'available': True, 'touched': False, 'stale': False},
+                'git': {'available': True, 'tracked': True, 'age_days': 400, 'churn_count': 2},
+            }]
+
+            with patch.object(analyzer, 'run', return_value=graph):
+                analyzer.main(['cleanup-plan', str(root), '--output', str(output), '--cleanup-plan-md', str(plan)])
+
+            self.assertTrue(output.is_file())
+            self.assertIn('# Orbits Cleanup Plan', plan.read_text(encoding='utf-8'))
+
+    def test_scale_proof_command_writes_scale_report(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            output = root / 'graph.json'
+            report = root / 'scale.md'
+            graph = self._minimal_graph()
+            graph['nodes'] = [{'id': 'app.py', 'language': 'python', 'size': 20}]
+
+            with patch.object(analyzer, 'run', return_value=graph):
+                analyzer.main(['scale-proof', str(root), '--output', str(output), '--scale-proof-md', str(report)])
+
+            self.assertTrue(output.is_file())
+            self.assertIn('# Orbits Scale Proof', report.read_text(encoding='utf-8'))
+
     def test_delete_plan_allows_only_high_confidence_untouched_waste(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -109,6 +144,21 @@ class AnalyzerBehaviorTests(unittest.TestCase):
             analyzer.run(root, verbose=False)
 
             self.assertEqual((root / '.gitignore').read_text(encoding='utf-8'), 'node_modules\n')
+
+    def test_run_attaches_codebase_map_intelligence(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'package.json').write_text(json.dumps({'scripts': {'dev': 'vite'}}), encoding='utf-8')
+            (root / 'src').mkdir()
+            (root / 'src' / 'main.py').write_text('import helper\n', encoding='utf-8')
+            (root / 'src' / 'helper.py').write_text('VALUE = 1\n', encoding='utf-8')
+
+            graph = analyzer.run(root, verbose=False)
+
+            self.assertIn('map', graph)
+            self.assertIn('regions', graph['map'])
+            self.assertIn('impact', graph['map'])
+            self.assertEqual(graph['map']['runtime_commands'][0]['command'], 'npm run dev')
 
     def test_server_serves_visualizer_and_graph_without_chdir(self):
         with TemporaryDirectory() as tmp:

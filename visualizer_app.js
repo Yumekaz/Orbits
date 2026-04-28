@@ -61,7 +61,7 @@
       visibleClasses: new Set(DEFAULT_CLASSES),
       activeLangs: null,
       searchQuery: '',
-      leftPanel: 'waste-panel',
+      leftPanel: 'map-panel',
       layoutMode: 'force',
       edgeMode: 'static',
       focusRadius: 0,
@@ -192,7 +192,7 @@
   function nodeVisible(node) { return APP.state.visibleClasses.has(nodeClass(node)) && (!node.language || currentLanguageSet().has(node.language)); }
 
   function captureElements() {
-    ['graph-canvas', 'canvas-wrap', 'minimap', 'drop-overlay', 'search-box', 'search-input', 'search-status', 'warning-banner', 'warning-copy', 'worker-status', 'worker-message', 'runtime-pill', 'health-pill', 'elapsed', 'perf-mode', 'toast', 'btn-waste', 'btn-cycles', 'btn-insp', 'btn-cluster', 'btn-labels', 'btn-filter', 'btn-lang', 'btn-search', 'btn-reset', 'btn-folder', 'btn-open', 'btn-cycle-highlight', 'btn-focus', 'btn-full', 'btn-perf', 'layout-menu', 'layout-force', 'layout-cluster', 'layout-radial', 'edge-mode-static', 'edge-mode-runtime', 'edge-mode-combined', 'lang-menu', 'lang-chip-grid', 'filter-panel', 'filter-chip-grid', 'waste-list', 'waste-badge', 'cycle-list', 'cycle-badge', 'left-rail', 'inspector', 'ip', 'ic', 'iname', 'imeta', 'ihistory', 'icycle', 'iout', 'iin', 'file-input', 'warning-dismiss', 'lang-all', 'lang-none', 'filter-all', 'filter-waste', 'filter-default', 's-files', 's-edges', 's-orphans', 's-cycles', 's-health', 's-unreachable', 's-max-depth', 's-resolved', 's-langs'].forEach((id) => { ELS[id] = $(id); });
+    ['graph-canvas', 'canvas-wrap', 'minimap', 'drop-overlay', 'search-box', 'search-input', 'search-status', 'warning-banner', 'warning-copy', 'worker-status', 'worker-message', 'runtime-pill', 'health-pill', 'elapsed', 'perf-mode', 'toast', 'btn-waste', 'btn-cycles', 'btn-insp', 'btn-cluster', 'btn-labels', 'btn-filter', 'btn-lang', 'btn-search', 'btn-reset', 'btn-folder', 'btn-open', 'btn-cycle-highlight', 'btn-focus', 'btn-full', 'btn-perf', 'layout-menu', 'layout-force', 'layout-cluster', 'layout-radial', 'edge-mode-static', 'edge-mode-runtime', 'edge-mode-combined', 'lang-menu', 'lang-chip-grid', 'filter-panel', 'filter-chip-grid', 'map-list', 'waste-list', 'waste-badge', 'cycle-list', 'cycle-badge', 'impact-list', 'left-rail', 'inspector', 'ip', 'ic', 'iname', 'imeta', 'ihistory', 'icycle', 'iout', 'iin', 'file-input', 'warning-dismiss', 'lang-all', 'lang-none', 'filter-all', 'filter-waste', 'filter-default', 's-files', 's-edges', 's-orphans', 's-cycles', 's-health', 's-unreachable', 's-max-depth', 's-resolved', 's-langs'].forEach((id) => { ELS[id] = $(id); });
     ELS.canvasWrap = $('canvas-wrap');
     APP.canvas = ELS['graph-canvas'];
     APP.ctx = APP.canvas.getContext('2d');
@@ -465,6 +465,7 @@
     updateUnsupportedBanner();
     renderLanguageMenu();
     renderFilterPanel();
+    renderMapPanel();
     updateStats();
     updateLeftPanel();
     updateInspector();
@@ -1253,6 +1254,151 @@
     container.querySelectorAll('[data-intentional]').forEach((el) => el.addEventListener('click', (event) => { event.stopPropagation(); markIntentional(el.dataset.intentional, true).catch((err) => toast(err.message)); }));
   }
 
+  function fallbackMapData() {
+    if (!APP.graph || !APP.indexes) return {};
+    const impact = {};
+    APP.indexes.nodeById.forEach((node, id) => {
+      const inCount = APP.indexes.inboundByNode.get(id)?.length || 0;
+      const outCount = APP.indexes.outboundByNode.get(id)?.length || 0;
+      const hubScore = inCount * 4 + outCount * 2 + Math.max(0, node.importance || 0);
+      impact[id] = {
+        id,
+        region: dirname(id).split('/')[0] || '.',
+        classification: nodeClass(node),
+        entrypoint: nodeClass(node) === 'ENTRY',
+        dead: nodeClass(node) === 'ORPHAN' || nodeClass(node) === 'ISLAND',
+        direct_dependents: inCount,
+        direct_dependencies: outCount,
+        transitive_dependents: inCount,
+        transitive_dependencies: outCount,
+        blast_radius: inCount,
+        fan_out: outCount,
+        hub_score: Math.round(hubScore),
+        depth: node.depth
+      };
+    });
+    const regions = new Map();
+    APP.indexes.nodeById.forEach((node, id) => {
+      const regionId = dirname(id).split('/')[0] || '.';
+      const region = regions.get(regionId) || { id: regionId, kind: regionId === '.' ? 'root' : 'folder', node_count: 0, entrypoint_count: 0, dead_count: 0, languages: new Set(), hub_score: 0 };
+      region.node_count += 1;
+      region.entrypoint_count += nodeClass(node) === 'ENTRY' ? 1 : 0;
+      region.dead_count += ['ORPHAN', 'ISLAND'].includes(nodeClass(node)) ? 1 : 0;
+      region.hub_score += impact[id]?.hub_score || 0;
+      if (node.language) region.languages.add(node.language);
+      regions.set(regionId, region);
+    });
+    const regionItems = [...regions.values()].map((region) => ({ ...region, languages: [...region.languages].sort() })).sort((a, b) => b.hub_score - a.hub_score || a.id.localeCompare(b.id));
+    const coreHubs = Object.values(impact).filter((item) => !item.dead && item.hub_score > 0).sort((a, b) => b.hub_score - a.hub_score || a.id.localeCompare(b.id)).slice(0, 10).map((item) => ({ ...item, name: basename(item.id) }));
+    const entryItems = APP.graph.nodes.filter((node) => nodeClass(node) === 'ENTRY' || node.entrypoint).map((node) => ({
+      id: node.id,
+      name: basename(node.id),
+      region: impact[node.id]?.region || dirname(node.id),
+      reaches: impact[node.id]?.fan_out || 0,
+      direct_dependencies: impact[node.id]?.direct_dependencies || 0,
+      reasons: node.entrypoint_reasons || []
+    }));
+    return {
+      regions: regionItems,
+      core_hubs: coreHubs,
+      entrypoints: { count: entryItems.length, items: entryItems },
+      isolated: { dead_count: APP.graph.waste?.length || 0, orphan_nodes: (APP.graph.waste || []).map((item) => normalizeId(item.id)), islands: [] },
+      impact,
+      framework_signals: [],
+      runtime_commands: []
+    };
+  }
+
+  function currentMapData() {
+    const map = APP.graph?.map;
+    if (map && (Array.isArray(map.regions) || map.impact)) return map;
+    return fallbackMapData();
+  }
+
+  function mapFocusRow(item, color, detail, score) {
+    const id = normalizeId(item.id);
+    return `<div class="list-item" data-id="${escapeHtml(id)}"><div class="item-dot" style="background:${color}"></div><div class="item-info"><div class="item-name">${escapeHtml(basename(id))}</div><div class="item-path">${escapeHtml(detail || dirname(id))}</div></div>${score == null ? '' : `<div class="item-score">${escapeHtml(score)}</div>`}</div>`;
+  }
+
+  function renderMapPanel() {
+    if (!APP.graph || !ELS['map-list']) return;
+    const map = currentMapData();
+    const regions = Array.isArray(map.regions) ? map.regions : [];
+    const entrypoints = map.entrypoints && Array.isArray(map.entrypoints.items) ? map.entrypoints.items : [];
+    const hubs = Array.isArray(map.core_hubs) ? map.core_hubs : [];
+    const isolated = map.isolated || {};
+    const frameworks = Array.isArray(map.framework_signals) ? map.framework_signals : [];
+    const commands = Array.isArray(map.runtime_commands) ? map.runtime_commands : [];
+    let html = '<div class="map-grid">';
+    html += `<div class="map-card"><div class="map-num">${regions.length}</div><div class="map-label">regions</div></div>`;
+    html += `<div class="map-card"><div class="map-num">${entrypoints.length}</div><div class="map-label">entrypoints</div></div>`;
+    html += `<div class="map-card"><div class="map-num">${hubs.length}</div><div class="map-label">core hubs</div></div>`;
+    html += `<div class="map-card"><div class="map-num">${Number(isolated.dead_count || 0)}</div><div class="map-label">dead zones</div></div>`;
+    html += '</div>';
+    if (frameworks.length) {
+      html += '<div class="list-label">Framework Signals</div>';
+      frameworks.slice(0, 6).forEach((item) => {
+        html += `<div class="map-line"><strong>${escapeHtml(item.framework)}</strong><span>${Math.round(Number(item.confidence || 0) * 100)}%</span></div>`;
+      });
+    }
+    if (commands.length) {
+      html += '<div class="list-label">Runtime Discovery</div>';
+      commands.slice(0, 6).forEach((item) => {
+        html += `<div class="map-text"><code>${escapeHtml(item.command)}</code><br><span style="color:var(--dim)">${escapeHtml(item.source || '')}${item.raw ? ` - ${escapeHtml(item.raw)}` : ''}</span></div>`;
+      });
+    }
+    if (regions.length) {
+      html += '<div class="list-label">Regions</div>';
+      regions.slice(0, 8).forEach((region) => {
+        const lang = Array.isArray(region.languages) && region.languages.length ? region.languages.slice(0, 3).map(displayLang).join(', ') : 'mixed';
+        html += `<div class="map-line"><strong>${escapeHtml(region.id)}</strong><span>${Number(region.node_count || 0)} files / ${escapeHtml(lang)}</span></div>`;
+      });
+    }
+    if (entrypoints.length) {
+      html += '<div class="list-label">Start Here</div>';
+      entrypoints.slice(0, 8).forEach((item) => { html += mapFocusRow(item, 'var(--green)', `${item.region || dirname(item.id)} - reaches ${Number(item.reaches || 0)}`, null); });
+    }
+    if (hubs.length) {
+      html += '<div class="list-label">Core Hubs</div>';
+      hubs.slice(0, 8).forEach((item) => { html += mapFocusRow(item, 'var(--cyan)', `${item.region || dirname(item.id)} - blast ${Number(item.blast_radius || 0)}`, item.hub_score); });
+    }
+    if (!regions.length && !entrypoints.length && !hubs.length) {
+      html += '<div style="padding:40px;text-align:center;color:var(--dim);font-size:11px">No map intelligence in this graph yet.</div>';
+    }
+    ELS['map-list'].innerHTML = html;
+    bindRowClicks(ELS['map-list']);
+    syncActiveListRows();
+  }
+
+  function renderImpactPanel() {
+    if (!APP.graph || !ELS['impact-list']) return;
+    const map = currentMapData();
+    const impact = map.impact && typeof map.impact === 'object' ? map.impact : {};
+    const selected = APP.state.selectedId ? impact[APP.state.selectedId] : null;
+    let html = '';
+    if (selected) {
+      html += '<div class="list-label">Selected File</div>';
+      html += `<div class="map-text"><strong>${escapeHtml(selected.id)}</strong><br>${escapeHtml(selected.classification || 'UNKNOWN')} in ${escapeHtml(selected.region || dirname(selected.id))}</div>`;
+      html += '<div class="map-grid">';
+      html += `<div class="map-card"><div class="map-num">${Number(selected.direct_dependents || 0)}</div><div class="map-label">direct dependents</div></div>`;
+      html += `<div class="map-card"><div class="map-num">${Number(selected.direct_dependencies || 0)}</div><div class="map-label">direct deps</div></div>`;
+      html += `<div class="map-card"><div class="map-num">${Number(selected.blast_radius || 0)}</div><div class="map-label">blast radius</div></div>`;
+      html += `<div class="map-card"><div class="map-num">${Number(selected.fan_out || 0)}</div><div class="map-label">fan out</div></div>`;
+      html += '</div>';
+      html += `<div class="map-text">${selected.entrypoint ? 'Entrypoint. Changes here can affect a run path.' : 'Not an entrypoint.'} ${selected.dead ? 'Currently marked as dead/waste.' : 'Currently live in the static map.'}</div>`;
+    } else {
+      html += '<div class="map-text">Select a node to see change impact, or use these high-impact files as a starting route.</div>';
+    }
+    const ranked = Object.values(impact).filter((item) => item && !item.dead).sort((a, b) => Number(b.hub_score || 0) - Number(a.hub_score || 0) || String(a.id).localeCompare(String(b.id))).slice(0, 10);
+    if (ranked.length) {
+      html += '<div class="list-label">Highest Impact Files</div>';
+      ranked.forEach((item) => { html += mapFocusRow(item, item.entrypoint ? 'var(--green)' : 'var(--cyan)', `${item.region || dirname(item.id)} - blast ${Number(item.blast_radius || 0)}`, item.hub_score); });
+    }
+    ELS['impact-list'].innerHTML = html;
+    bindRowClicks(ELS['impact-list']);
+    syncActiveListRows();
+  }
+
   function renderWaste() {
     if (!APP.graph) return;
     const waste = (APP.graph.waste || []).map((item) => mergeWasteNode(item)).filter((node) => nodeVisible(node));
@@ -1322,6 +1468,7 @@
       ELS.icycle.innerHTML = '<div style="color:var(--dim);font-size:10px">No cycle selected</div>';
       renderChips(ELS.iout, [], 'out');
       renderChips(ELS.iin, [], 'in');
+      renderImpactPanel();
       syncActiveListRows();
       return;
     }
@@ -1358,6 +1505,7 @@
       if (APP.state.selectedId !== node.id) return;
       ELS.ihistory.innerHTML = `<div style="color:var(--dim);font-size:10px">${escapeHtml(err.message)}</div>`;
     });
+    renderImpactPanel();
     syncActiveListRows();
   }
 
@@ -1383,6 +1531,8 @@
     const selectedNode = APP.state.selectedId ? APP.indexes.nodeById.get(APP.state.selectedId) : null;
     if (selectedNode && !nodeVisible(selectedNode)) APP.state.selectedId = null;
     renderFilterPanel();
+    renderMapPanel();
+    renderImpactPanel();
     renderWaste();
     renderCycles();
     updateInspector();
@@ -1398,6 +1548,8 @@
     const selectedNode = APP.state.selectedId ? APP.indexes.nodeById.get(APP.state.selectedId) : null;
     if (selectedNode && !nodeVisible(selectedNode)) APP.state.selectedId = null;
     renderLanguageMenu();
+    renderMapPanel();
+    renderImpactPanel();
     renderWaste();
     renderCycles();
     updateInspector();
@@ -1409,10 +1561,14 @@
 
   function updateLeftPanel() {
     document.querySelectorAll('.left-tab').forEach((tab) => tab.classList.toggle('active', tab.dataset.leftPanel === APP.state.leftPanel));
+    $('map-panel').classList.toggle('left-panel-hidden', APP.state.leftPanel !== 'map-panel');
     $('waste-panel').classList.toggle('left-panel-hidden', APP.state.leftPanel !== 'waste-panel');
     $('cycles-panel').classList.toggle('left-panel-hidden', APP.state.leftPanel !== 'cycles-panel');
+    $('impact-panel').classList.toggle('left-panel-hidden', APP.state.leftPanel !== 'impact-panel');
+    renderMapPanel();
     renderWaste();
     renderCycles();
+    renderImpactPanel();
   }
 
   function performanceLabel() {

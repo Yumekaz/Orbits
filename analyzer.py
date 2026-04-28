@@ -27,6 +27,8 @@ from importlib import resources
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from cleanup_plan import build_cleanup_plan, format_cleanup_plan_markdown
+from codebase_map import build_codebase_map
 from git_intel import enrich_dead_code_confidence, flatten_waste_for_report
 from graph_diff import diff_graph_files, format_graph_diff
 from graph_engine import analyze_graph
@@ -38,9 +40,11 @@ from runtime_trace import (
     merge_runtime_traces,
     run_runtime_trace,
 )
+from scale_proof import build_scale_proof, format_scale_proof_markdown
 
 
 CONFIG_FILENAMES = ('codegraph.config.json', '.orbits.json')
+CLI_COMMANDS = {'scan', 'cleanup-plan', 'scale-proof'}
 
 
 def _as_string_list(value) -> list[str]:
@@ -600,12 +604,21 @@ def run(
         raw = merge_runtime_traces(raw, overlays)
 
     enriched = enrich_dead_code_confidence(analyze_graph(raw), root_path)
+    enriched['map'] = build_codebase_map(root_path, enriched)
 
     if verbose:
         summary = enriched['summary']
         meta = enriched['meta']
         langs = meta.get('languages', [])
+        codebase_map = enriched.get('map', {})
+        entrypoints = codebase_map.get('entrypoints', {}) if isinstance(codebase_map, dict) else {}
+        runtime_commands = codebase_map.get('runtime_commands', []) if isinstance(codebase_map, dict) else []
         print(f"  Languages: {', '.join(langs) if langs else 'none'}", file=sys.stderr)
+        if entrypoints.get('count'):
+            print(f"  Map:       {entrypoints.get('count')} entrypoints detected", file=sys.stderr)
+        if runtime_commands:
+            preview = ', '.join(item.get('command', '') for item in runtime_commands[:3])
+            print(f"  Run hints: {preview}", file=sys.stderr)
         unsupported = meta.get('unsupported_languages', [])
         if unsupported:
             labels = ', '.join(item['language'] for item in unsupported)
@@ -804,12 +817,21 @@ def serve(output_path: Path, port: int = 8765):
             print('\n  Stopped.', file=sys.stderr)
 
 
-def _normalize_cli_args(argv: list[str] | None) -> list[str] | None:
+def _extract_cli_command(argv: list[str] | None) -> tuple[str, list[str]]:
     if argv is None:
         argv = sys.argv[1:]
-    if argv and argv[0] == 'scan':
-        return argv[1:]
-    return argv
+    if argv and argv[0] in CLI_COMMANDS:
+        return argv[0], argv[1:]
+    return 'scan', list(argv)
+
+
+def _write_markdown_report(content: str, output: str | Path) -> None:
+    if str(output) == '-':
+        sys.stdout.write(content)
+        return
+    path = Path(output).resolve()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding='utf-8')
 
 
 def main(argv: list[str] | None = None):
@@ -824,10 +846,13 @@ Phase 5: optional Python, Node.js, and scoped C/C++ runtime tracing
 Examples:
   orbits scan .
   orbits scan . --open
+  orbits cleanup-plan .
+  orbits scale-proof .
   orbits scan ~/projects/myapp -o graph.json --open
   orbits --diff old_graph.json new_graph.json
         """,
     )
+    command, normalized_argv = _extract_cli_command(argv)
     parser.add_argument('path', nargs='?', help='Project root directory')
     parser.add_argument('-o', '--output', default='graph.json')
     parser.add_argument('--diff', nargs=2, metavar=('BASELINE', 'CURRENT'), help='Compare two existing Orbits graph JSON files')
@@ -846,13 +871,15 @@ Examples:
     parser.add_argument('--node-bin', default=os.environ.get('ORBITS_NODE_BIN', 'node'), help='Node executable to use for Node.js runtime tracing')
     parser.add_argument('--dead-report-md', help='Write a Markdown report of actionable dead files to this path; use - for stdout')
     parser.add_argument('--dead-report-csv', help='Write a CSV report of actionable dead files to this path; use - for stdout')
+    parser.add_argument('--cleanup-plan-md', help='Write a Markdown cleanup plan to this path; use - for stdout')
+    parser.add_argument('--scale-proof-md', help='Write a Markdown scale proof report to this path; use - for stdout')
     parser.add_argument('--check', action='store_true', help='Exit nonzero when configured or flag-provided thresholds are exceeded')
     parser.add_argument('--max-orphans', type=int, help='Check threshold: maximum actionable orphan files')
     parser.add_argument('--max-islands', type=int, help='Check threshold: maximum actionable island clusters')
     parser.add_argument('--min-health', type=int, help='Check threshold: minimum graph health score')
     parser.add_argument('--serve', '--open', dest='serve', action='store_true', help='Open visualizer in browser after analysis')
     parser.add_argument('--port', type=int, default=8765)
-    args = parser.parse_args(_normalize_cli_args(argv))
+    args = parser.parse_args(normalized_argv)
 
     if args.diff:
         diff = diff_graph_files(args.diff[0], args.diff[1])
@@ -936,6 +963,19 @@ Examples:
     if args.dead_report_csv:
         write_dead_report_csv(graph, args.dead_report_csv)
         print(f"  Report CSV: {args.dead_report_csv}", file=sys.stderr)
+    if command == 'cleanup-plan' or args.cleanup_plan_md:
+        cleanup_markdown = format_cleanup_plan_markdown(build_cleanup_plan(graph))
+        cleanup_output = args.cleanup_plan_md or '-'
+        _write_markdown_report(cleanup_markdown, cleanup_output)
+        if cleanup_output != '-':
+            print(f"  Cleanup:   {cleanup_output}", file=sys.stderr)
+    if command == 'scale-proof' or args.scale_proof_md:
+        scale_proof = build_scale_proof(graph)
+        scale_markdown = format_scale_proof_markdown(scale_proof)
+        scale_output = args.scale_proof_md or '-'
+        _write_markdown_report(scale_markdown, scale_output)
+        if scale_output != '-':
+            print(f"  Scale:     {scale_output}", file=sys.stderr)
     print(f"  Output:    {output_path}", file=sys.stderr)
     print(f"{'-' * 40}\n", file=sys.stderr)
 

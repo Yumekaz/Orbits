@@ -56,6 +56,12 @@ class OrbitsPrCommentTests(unittest.TestCase):
             'waste': {'before': 2, 'after': 3, 'delta': 1, 'added': ['orphan.py'], 'removed': []},
             'classification_changes': {'changed': [{'id': 'legacy/a.py', 'before': 'LEAF', 'after': 'ISLAND'}]},
             'confidence_changes': {'changed': [{'id': 'orphan.py', 'before_score': 50, 'after_score': 84, 'delta': 34}]},
+            'architecture': {
+                'impact': {'level': 'high', 'signals': ['new_dead_code', 'coupling_increased']},
+                'coupling': {'delta': {'static_edges': 1}},
+                'cycles': {'delta': 1},
+                'health': {'delta': -8},
+            },
         }
 
         body = orbits_pr_comment.build_comment_body(
@@ -78,7 +84,10 @@ class OrbitsPrCommentTests(unittest.TestCase):
         self.assertIn('structural orphan with no static in/out edges; last touched 410 days ago', body)
         self.assertIn('New probable dead files introduced by this PR:', body)
         self.assertIn('Runtime edges: 0 -> 1 (+1).', body)
+        self.assertIn('Architecture impact: **HIGH**.', body)
+        self.assertIn('Signals: new_dead_code, coupling_increased.', body)
         self.assertIn('| Nodes | 3 | 4 | +1 |', body)
+        self.assertIn('| Static coupling edges | +1 |', body)
         self.assertIn('| Runtime edges | 0 | 1 | +1 |', body)
         self.assertIn('`+ app.py -> new.py`', body)
         self.assertIn('**Classification changes**', body)

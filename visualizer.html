@@ -198,8 +198,10 @@
       overflow: hidden
     }
 
+    #map-panel,
     #waste-panel,
     #cycles-panel,
+    #impact-panel,
     #inspector {
       background: var(--panel-bg);
       backdrop-filter: blur(18px);
@@ -212,7 +214,10 @@
     }
 
      #left-rail {
+      display: flex;
+      flex-direction: column;
       min-height: 0;
+      height: 100%;
       width: 320px;
       border-right: 1px solid var(--border);
       overflow: hidden;
@@ -220,10 +225,13 @@
       transition: width .35s cubic-bezier(0.4, 0, 0.2, 1)
     }
 
+    #map-panel,
     #waste-panel,
-    #cycles-panel {
+    #cycles-panel,
+    #impact-panel {
       width: 100%;
-      flex: 1
+      flex: 1;
+      min-height: 0
     }
 
     #left-rail.collapsed {
@@ -320,8 +328,67 @@
     /* ── Waste List & Inspector ────────────────────────────── */
     .list-cont {
       flex: 1;
+      min-height: 0;
       overflow-y: auto;
       padding: 8px 0
+    }
+
+    .map-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      padding: 12px
+    }
+
+    .map-card {
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.025);
+      border-radius: 8px;
+      padding: 10px
+    }
+
+    .map-num {
+      font-size: 18px;
+      font-weight: 800;
+      color: var(--text-hi)
+    }
+
+    .map-label {
+      margin-top: 4px;
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: .12em;
+      color: var(--dim)
+    }
+
+    .map-text {
+      padding: 8px 20px;
+      font-size: 11px;
+      line-height: 1.5;
+      color: var(--text)
+    }
+
+    .map-line {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 8px 20px;
+      border-bottom: 1px solid rgba(255,255,255,0.035);
+      font-size: 11px;
+      color: var(--text)
+    }
+
+    .map-line strong {
+      color: var(--text-hi);
+      font-weight: 700
+    }
+
+    .item-score {
+      margin-left: auto;
+      flex-shrink: 0;
+      font-size: 10px;
+      color: var(--cyan);
+      font-variant-numeric: tabular-nums
     }
 
     .list-label {
@@ -1134,12 +1201,22 @@
   <div id="main">
     <div id="left-rail" data-testid="left-rail">
       <div id="left-tabs">
-        <div class="left-tab active" data-left-panel="waste-panel">dead <span class="badge" id="waste-badge">0</span>
+        <div class="left-tab active" data-left-panel="map-panel">map
+        </div>
+        <div class="left-tab" data-left-panel="waste-panel">dead <span class="badge" id="waste-badge">0</span>
         </div>
         <div class="left-tab" data-left-panel="cycles-panel">cycles <span class="badge ok" id="cycle-badge">0</span>
         </div>
+        <div class="left-tab" data-left-panel="impact-panel">impact
+        </div>
       </div>
-      <div id="waste-panel">
+      <div id="map-panel">
+        <div class="section-header"><span class="sh-title">Codebase Map</span></div>
+        <div id="map-list" class="list-cont">
+          <div style="padding:40px;text-align:center;color:var(--dim)">Scan a project to build the map</div>
+        </div>
+      </div>
+      <div id="waste-panel" class="left-panel-hidden">
         <div class="section-header"><span class="sh-title">Dead Files</span></div>
         <div id="waste-list" class="list-cont">
           <div style="padding:40px;text-align:center;color:var(--dim)">⬡<br>Scan a project to analyze waste</div>
@@ -1153,6 +1230,13 @@
         </div>
         <div id="cycle-list" class="list-cont">
           <div style="padding:40px;text-align:center;color:var(--dim)">No cycle data loaded</div>
+        </div>
+      </div>
+
+      <div id="impact-panel" class="left-panel-hidden">
+        <div class="section-header"><span class="sh-title">Impact</span></div>
+        <div id="impact-list" class="list-cont">
+          <div style="padding:40px;text-align:center;color:var(--dim)">Select a file to inspect impact</div>
         </div>
       </div>
     </div>

@@ -38,6 +38,40 @@ test.describe('visualizer regressions', () => {
     expect(await sampleCanvasPixels(page)).toBeGreaterThan(20);
   });
 
+  test('left rail panels scroll when lists are long', async ({ page }) => {
+    const nodes = Array.from({ length: 70 }, (_, index) => ({
+      id: `legacy/dead-${index}.py`,
+      name: `dead-${index}.py`,
+      filepath: `legacy/dead-${index}.py`,
+      language: 'python',
+      classification: 'ORPHAN',
+      size: 20,
+      depth: -1,
+    }));
+    await page.evaluate((payload) => (window as any).loadGraph(payload), {
+      nodes,
+      edges: [],
+      cycles: [],
+      islands: [],
+      waste: nodes.map((node) => ({ id: node.id, classification: 'ORPHAN', size: node.size, island_id: -1 })),
+      summary: { health_score: 10, cycle_count: 0, island_count: 0, counts: { ORPHAN: nodes.length } },
+      meta: { total_files: nodes.length, total_edges: 0, import_stats: {}, languages: ['python'] },
+    });
+    await page.locator('[data-left-panel="waste-panel"]').click();
+
+    const result = await page.locator('#waste-list').evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+      return {
+        clientHeight: element.clientHeight,
+        scrollHeight: element.scrollHeight,
+        scrollTop: element.scrollTop,
+      };
+    });
+
+    expect(result.scrollHeight).toBeGreaterThan(result.clientHeight);
+    expect(result.scrollTop).toBeGreaterThan(0);
+  });
+
   test('graph still renders after opening and closing popover menus', async ({ page }) => {
     await page.getByTestId('btn-view').click();
     await expect.poll(async () => (await getDebug(page)).menuStates.layoutOpen).toBe(true);

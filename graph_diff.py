@@ -7,6 +7,7 @@ from typing import Any
 
 
 EdgeKey = tuple[str, str]
+CycleKey = tuple[str, ...]
 
 
 def _normalize_id(value: Any) -> str:
@@ -83,6 +84,48 @@ def _sorted_edges(edges: set[EdgeKey]) -> list[dict[str, str]]:
     return [{'source': source, 'target': target} for source, target in sorted(edges)]
 
 
+def _edge_density(edge_count: int, node_count: int) -> float:
+    if node_count <= 1:
+        return 0.0
+    return round(edge_count / (node_count * (node_count - 1)), 4)
+
+
+def _endpoint_ids(edges: set[EdgeKey]) -> list[str]:
+    endpoints: set[str] = set()
+    for source, target in edges:
+        endpoints.add(source)
+        endpoints.add(target)
+    return sorted(endpoints)
+
+
+def _cycle_keys(graph: dict[str, Any]) -> set[CycleKey]:
+    cycles = graph.get('cycles', [])
+    if not isinstance(cycles, list):
+        return set()
+
+    keys: set[CycleKey] = set()
+    for cycle in cycles:
+        if not isinstance(cycle, list):
+            continue
+        normalized = [_normalize_id(item) for item in cycle]
+        normalized = [item for item in normalized if item]
+        if len(normalized) < 2:
+            continue
+        if normalized[0] == normalized[-1]:
+            normalized = normalized[:-1]
+        if not normalized:
+            continue
+        min_idx = min(range(len(normalized)), key=normalized.__getitem__)
+        rotated = normalized[min_idx:] + normalized[:min_idx]
+        rotated.append(rotated[0])
+        keys.add(tuple(rotated))
+    return keys
+
+
+def _sorted_cycles(cycles: set[CycleKey]) -> list[list[str]]:
+    return [list(cycle) for cycle in sorted(cycles)]
+
+
 def _classification_changes(baseline_graph: dict[str, Any], current_graph: dict[str, Any]) -> list[dict[str, str]]:
     baseline_nodes = _node_index(baseline_graph)
     current_nodes = _node_index(current_graph)
@@ -157,6 +200,198 @@ def _runtime_summary(graph: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _summary_int(graph: dict[str, Any], key: str, fallback: int = 0) -> int:
+    summary = graph.get('summary', {}) if isinstance(graph.get('summary'), dict) else {}
+    try:
+        return int(summary.get(key, fallback) or 0)
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _confidence_impact(changes: list[dict[str, Any]]) -> dict[str, Any]:
+    increased = 0
+    decreased = 0
+    max_increase = 0
+    max_decrease = 0
+    for item in changes:
+        delta = item.get('delta')
+        if not isinstance(delta, int):
+            continue
+        if delta > 0:
+            increased += 1
+            max_increase = max(max_increase, delta)
+        elif delta < 0:
+            decreased += 1
+            max_decrease = min(max_decrease, delta)
+    return {
+        'changed': len(changes),
+        'increased': increased,
+        'decreased': decreased,
+        'max_increase': max_increase,
+        'max_decrease': max_decrease,
+    }
+
+
+def _classification_impact(changes: list[dict[str, str]]) -> dict[str, Any]:
+    into_dead = 0
+    out_of_dead = 0
+    structural = 0
+    dead_classes = {'ORPHAN', 'ISLAND'}
+    for item in changes:
+        before = str(item.get('before') or '').upper()
+        after = str(item.get('after') or '').upper()
+        if before not in dead_classes and after in dead_classes:
+            into_dead += 1
+        elif before in dead_classes and after not in dead_classes:
+            out_of_dead += 1
+        else:
+            structural += 1
+    return {
+        'changed': len(changes),
+        'into_dead': into_dead,
+        'out_of_dead': out_of_dead,
+        'structural': structural,
+    }
+
+
+def _architecture_impact_level(signals: list[str]) -> str:
+    high_signals = {
+        'new_cycles',
+        'new_dead_code',
+        'runtime_became_stale',
+        'runtime_disabled',
+        'confidence_increased',
+        'classification_into_dead',
+    }
+    medium_signals = {
+        'coupling_increased',
+        'runtime_edges_changed',
+        'classification_changed',
+        'confidence_changed',
+    }
+    if any(signal in high_signals for signal in signals):
+        return 'high'
+    if any(signal in medium_signals for signal in signals):
+        return 'medium'
+    return 'low'
+
+
+def _architecture_summary(
+    baseline_graph: dict[str, Any],
+    current_graph: dict[str, Any],
+    baseline_nodes: set[str],
+    current_nodes: set[str],
+    baseline_edges: set[EdgeKey],
+    current_edges: set[EdgeKey],
+    baseline_dynamic_edges: set[EdgeKey],
+    current_dynamic_edges: set[EdgeKey],
+    baseline_waste: set[str],
+    current_waste: set[str],
+    classification_changes: list[dict[str, str]],
+    confidence_changes: list[dict[str, Any]],
+) -> dict[str, Any]:
+    added_edges = current_edges - baseline_edges
+    removed_edges = baseline_edges - current_edges
+    added_dynamic_edges = current_dynamic_edges - baseline_dynamic_edges
+    removed_dynamic_edges = baseline_dynamic_edges - current_dynamic_edges
+    baseline_cycles = _cycle_keys(baseline_graph)
+    current_cycles = _cycle_keys(current_graph)
+    added_cycles = current_cycles - baseline_cycles
+    removed_cycles = baseline_cycles - current_cycles
+    before_cycle_count = _summary_int(baseline_graph, 'cycle_count', len(baseline_cycles))
+    after_cycle_count = _summary_int(current_graph, 'cycle_count', len(current_cycles))
+    before_runtime = _runtime_summary(baseline_graph)
+    after_runtime = _runtime_summary(current_graph)
+    classification = _classification_impact(classification_changes)
+    confidence = _confidence_impact(confidence_changes)
+
+    signals: list[str] = []
+    if len(current_edges) > len(baseline_edges):
+        signals.append('coupling_increased')
+    if added_cycles or after_cycle_count > before_cycle_count:
+        signals.append('new_cycles')
+    if current_waste - baseline_waste:
+        signals.append('new_dead_code')
+    if before_runtime.get('enabled') and not after_runtime.get('enabled'):
+        signals.append('runtime_disabled')
+    if not before_runtime.get('stale') and after_runtime.get('stale'):
+        signals.append('runtime_became_stale')
+    if len(current_dynamic_edges) != len(baseline_dynamic_edges):
+        signals.append('runtime_edges_changed')
+    if classification['into_dead'] > 0:
+        signals.append('classification_into_dead')
+    elif classification['changed'] > 0:
+        signals.append('classification_changed')
+    if confidence['increased'] > 0:
+        signals.append('confidence_increased')
+    elif confidence['changed'] > 0:
+        signals.append('confidence_changed')
+
+    return {
+        'impact': {
+            'level': _architecture_impact_level(signals),
+            'signals': signals,
+        },
+        'coupling': {
+            'before': {
+                'nodes': len(baseline_nodes),
+                'static_edges': len(baseline_edges),
+                'edge_density': _edge_density(len(baseline_edges), len(baseline_nodes)),
+            },
+            'after': {
+                'nodes': len(current_nodes),
+                'static_edges': len(current_edges),
+                'edge_density': _edge_density(len(current_edges), len(current_nodes)),
+            },
+            'delta': {
+                'static_edges': len(current_edges) - len(baseline_edges),
+                'edge_density': round(
+                    _edge_density(len(current_edges), len(current_nodes))
+                    - _edge_density(len(baseline_edges), len(baseline_nodes)),
+                    4,
+                ),
+            },
+            'added_dependencies': len(added_edges),
+            'removed_dependencies': len(removed_edges),
+            'affected_nodes': _endpoint_ids(added_edges | removed_edges),
+        },
+        'cycles': {
+            'before': before_cycle_count,
+            'after': after_cycle_count,
+            'delta': after_cycle_count - before_cycle_count,
+            'added': _sorted_cycles(added_cycles),
+            'removed': _sorted_cycles(removed_cycles),
+        },
+        'dead_code': {
+            'before': len(baseline_waste),
+            'after': len(current_waste),
+            'delta': len(current_waste) - len(baseline_waste),
+            'added': sorted(current_waste - baseline_waste),
+            'removed': sorted(baseline_waste - current_waste),
+        },
+        'runtime': {
+            'before': before_runtime,
+            'after': after_runtime,
+            'delta': {
+                'dynamic_edges': len(current_dynamic_edges) - len(baseline_dynamic_edges),
+                'runtime_edges': after_runtime['runtime_edges'] - before_runtime['runtime_edges'],
+                'session_count': after_runtime['session_count'] - before_runtime['session_count'],
+            },
+            'added_dynamic_edges': len(added_dynamic_edges),
+            'removed_dynamic_edges': len(removed_dynamic_edges),
+            'enabled_changed': before_runtime['enabled'] != after_runtime['enabled'],
+            'stale_changed': before_runtime['stale'] != after_runtime['stale'],
+        },
+        'classification': classification,
+        'confidence': confidence,
+        'health': {
+            'before': _summary_int(baseline_graph, 'health_score', 0),
+            'after': _summary_int(current_graph, 'health_score', 0),
+            'delta': _summary_int(current_graph, 'health_score', 0) - _summary_int(baseline_graph, 'health_score', 0),
+        },
+    }
+
+
 def load_graph(path: str | Path) -> dict[str, Any]:
     graph_path = Path(path)
     with graph_path.open('r', encoding='utf-8') as handle:
@@ -182,6 +417,20 @@ def diff_graphs(
     current_waste = _waste_ids(current_graph)
     classification_changes = _classification_changes(baseline_graph, current_graph)
     confidence_changes = _confidence_changes(baseline_graph, current_graph)
+    architecture = _architecture_summary(
+        baseline_graph,
+        current_graph,
+        baseline_nodes,
+        current_nodes,
+        baseline_edges,
+        current_edges,
+        baseline_dynamic_edges,
+        current_dynamic_edges,
+        baseline_waste,
+        current_waste,
+        classification_changes,
+        confidence_changes,
+    )
 
     return {
         'baseline': {
@@ -236,6 +485,7 @@ def diff_graphs(
             'before': _runtime_summary(baseline_graph),
             'after': _runtime_summary(current_graph),
         },
+        'architecture': architecture,
     }
 
 
@@ -273,6 +523,44 @@ def _append_edges(lines: list[str], title: str, prefix: str, edges: list[dict[st
         lines.append(f'    ... {omitted} more')
 
 
+def _append_architecture(lines: list[str], architecture: dict[str, Any]) -> None:
+    if not architecture:
+        return
+    impact = architecture.get('impact', {}) if isinstance(architecture.get('impact'), dict) else {}
+    coupling = architecture.get('coupling', {}) if isinstance(architecture.get('coupling'), dict) else {}
+    cycles = architecture.get('cycles', {}) if isinstance(architecture.get('cycles'), dict) else {}
+    dead_code = architecture.get('dead_code', {}) if isinstance(architecture.get('dead_code'), dict) else {}
+    runtime = architecture.get('runtime', {}) if isinstance(architecture.get('runtime'), dict) else {}
+    health = architecture.get('health', {}) if isinstance(architecture.get('health'), dict) else {}
+    coupling_delta = coupling.get('delta', {}) if isinstance(coupling.get('delta'), dict) else {}
+    runtime_delta = runtime.get('delta', {}) if isinstance(runtime.get('delta'), dict) else {}
+    signals = impact.get('signals') if isinstance(impact.get('signals'), list) else []
+
+    lines.append('')
+    lines.append(f"Architecture impact: {str(impact.get('level', 'low')).upper()}")
+    if signals:
+        lines.append(f"  Signals: {', '.join(str(signal) for signal in signals)}")
+    lines.append(
+        '  Coupling: '
+        f"static edges {_delta(int(coupling_delta.get('static_edges', 0) or 0))}, "
+        f"density {_delta(float(coupling_delta.get('edge_density', 0) or 0))}"
+    )
+    lines.append(
+        '  Cycles: '
+        f"{cycles.get('before', 0)} -> {cycles.get('after', 0)} ({_delta(int(cycles.get('delta', 0) or 0))})"
+    )
+    lines.append(
+        '  Dead code: '
+        f"{dead_code.get('before', 0)} -> {dead_code.get('after', 0)} ({_delta(int(dead_code.get('delta', 0) or 0))})"
+    )
+    lines.append(
+        '  Runtime dynamic edges: '
+        f"{_delta(int(runtime_delta.get('dynamic_edges', 0) or 0))}"
+    )
+    if 'delta' in health:
+        lines.append(f"  Health: {_delta(int(health.get('delta', 0) or 0))}")
+
+
 def format_graph_diff(diff: dict[str, Any], limit: int = 20) -> str:
     limit = max(0, limit)
     nodes = diff['nodes']
@@ -282,6 +570,7 @@ def format_graph_diff(diff: dict[str, Any], limit: int = 20) -> str:
     classification_changes = diff.get('classification_changes', {}).get('changed', [])
     confidence_changes = diff.get('confidence_changes', {}).get('changed', [])
     runtime = diff.get('runtime', {})
+    architecture = diff.get('architecture', {})
     baseline = diff['baseline']
     current = diff['current']
 
@@ -357,6 +646,8 @@ def format_graph_diff(diff: dict[str, Any], limit: int = 20) -> str:
             f"{'enabled' if after_runtime.get('enabled') else 'off'}"
             f"{' stale' if after_runtime.get('stale') else ''}"
         )
+
+    _append_architecture(lines, architecture if isinstance(architecture, dict) else {})
 
     return '\n'.join(lines)
 

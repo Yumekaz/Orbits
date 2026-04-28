@@ -57,6 +57,8 @@ jobs:
             -o "$ORBITS_ARTIFACT_DIR/graph.json" \
             --dead-report-md "$ORBITS_ARTIFACT_DIR/dead-files.md" \
             --dead-report-csv "$ORBITS_ARTIFACT_DIR/dead-files.csv" \
+            --cleanup-plan-md "$ORBITS_ARTIFACT_DIR/cleanup-plan.md" \
+            --scale-proof-md "$ORBITS_ARTIFACT_DIR/scale-proof.md" \
             --check \
             ${ORBITS_CHECK_ARGS} \
             >"$ORBITS_ARTIFACT_DIR/orbits-check.out" \

@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "orbits-codebase"
-version = "0.1.1"
-description = "Multi-language codebase dependency graph analyzer and dead-code detector."
+version = "0.1.2"
+description = "Codebase map, dependency graph analyzer, and cleanup-confidence engine."
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [{ name = "Orbits contributors" }]
@@ -27,6 +27,8 @@ py-modules = [
   "analyzer",
   "benchmark_graph",
   "cache",
+  "cleanup_plan",
+  "codebase_map",
   "crawler",
   "entrypoints",
   "git_intel",
@@ -38,6 +40,7 @@ py-modules = [
   "resolver",
   "runtime_env",
   "runtime_trace",
+  "scale_proof",
   "worker",
 ]
 include-package-data = true

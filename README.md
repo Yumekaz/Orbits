@@ -1,6 +1,6 @@
 # Orbits
 
-Orbits shows what a codebase is, what actually ran, and what looks safe to clean up.
+Orbits is a map for codebases: it shows the main routes through a repo, what actually ran, what changed, and what looks safe to clean up.
 
 It analyzes a source tree, resolves project-local dependencies, merges optional runtime traces, scores dead-code confidence with git/runtime evidence, writes a `graph.json`, and serves a bundled visualizer for exploring the result.
 
@@ -12,6 +12,7 @@ The current stack is:
 - local HTTP serving through `orbits scan . --open`
 - first-class HTML/CSS/static-asset graph extraction for web projects
 - optional Python and Node.js runtime tracing with merged dynamic-edge overlays
+- codebase-map intelligence for regions, entrypoints, core hubs, impact, framework signals, and runtime command discovery
 
 ## Quick Start
 
@@ -58,6 +59,8 @@ Orbits can be installed as a normal Python CLI:
 python -m pip install -e .
 orbits scan . -o graph.json
 orbits scan . --open
+orbits cleanup-plan .
+orbits scale-proof .
 orbits --diff C:/temp/old-graph.json C:/temp/new-graph.json
 python -m orbits scan . --open
 ```
@@ -79,9 +82,22 @@ orbits scan . --open
 - Resolves project-local dependencies
 - Computes cycles, islands, orphans, depth, health, and summary stats
 - Detects common project entrypoints so launch files are not reported as dead just because nothing imports them
+- Adds a higher-level codebase map with regions, core hubs, isolated areas, framework signals, runtime command suggestions, and per-file impact metrics
 - Scores dead-code confidence from structure, git age/churn, and runtime touch evidence
-- Produces PR-friendly graph diffs, including dead-file, classification, confidence, and runtime-edge changes
+- Produces PR-friendly architecture diffs, including coupling, cycle, dead-file, classification, confidence, health, and runtime-edge changes
+- Writes cleanup plans and scale-proof reports for CI, demos, and review
 - Serves an interactive visualizer for the generated graph
+
+## Product Commands
+
+```powershell
+orbits scan . --open
+orbits cleanup-plan . --cleanup-plan-md cleanup-plan.md
+orbits scale-proof . --scale-proof-md scale-proof.md
+orbits --diff old-graph.json new-graph.json --diff-json
+```
+
+`scan` writes the graph and opens the guided map UI. `cleanup-plan` groups dead-code candidates into safe, risky, and manual-review buckets with evidence. `scale-proof` summarizes repo size, language mix, edge counts, largest files, and scan metadata.
 
 ## Entrypoint Detection
 
@@ -115,8 +131,9 @@ Fallback:
 4. Build graph metadata and summary metrics.
 5. Optionally trace a Python or Node.js entrypoint at runtime and write `runtime_trace.json`.
 6. Merge dynamic runtime edges into the served/exported graph overlay.
-7. Write `graph.json`.
-8. Optionally serve the visualizer and graph assets.
+7. Attach codebase-map intelligence for the UI and reports.
+8. Write `graph.json`.
+9. Optionally serve the visualizer and graph assets.
 
 ## Current Frontend Architecture
 
@@ -126,7 +143,7 @@ It currently uses:
 
 - D3 for zoom, motion, and interaction
 - `canvas` for graph rendering
-- DOM panels for controls, inspector, waste, cycles, and search
+- DOM panels for controls, codebase map, impact, inspector, waste, cycles, and search
 - `visualizer_worker.js` for browser-side folder analysis
 
 This preserves the older `3.5f` visual feel while keeping the later browser-side workflow and performance work.
@@ -392,6 +409,8 @@ Write explicit dead-file reports:
 
 ```bash
 orbits scan /path/to/project --dead-report-md dead-files.md --dead-report-csv dead-files.csv
+orbits cleanup-plan /path/to/project --cleanup-plan-md cleanup-plan.md
+orbits scale-proof /path/to/project --scale-proof-md scale-proof.md
 ```
 
 When the analyzed root is inside a Git worktree, each dead-file item is also
@@ -399,6 +418,12 @@ annotated with cheap history context: last touch age/timestamp, commit count,
 line churn, top authors, and a deterministic confidence score with reasons.
 Runtime overlays are folded into that score when present, so a fresh runtime
 touch lowers confidence while an untouched fresh trace raises it.
+
+The cleanup plan is intentionally not a delete button. It separates safe,
+risky, and manual-review candidates, then records the blockers and evidence a
+developer should check before removing anything. The scale proof is demo/CI
+evidence: file counts, edge counts, language mix, byte buckets, largest files,
+and scan metadata.
 
 Run a deterministic CI-style check:
 
@@ -412,10 +437,10 @@ orbits scan /path/to/project --check --max-orphans 0 --max-islands 1 --min-healt
 The included Orbits workflow runs the same CLI check on pushes and pull requests:
 
 ```bash
-orbits scan . -o orbits-artifacts/graph.json --dead-report-md orbits-artifacts/dead-files.md --dead-report-csv orbits-artifacts/dead-files.csv --check
+orbits scan . -o orbits-artifacts/graph.json --dead-report-md orbits-artifacts/dead-files.md --dead-report-csv orbits-artifacts/dead-files.csv --cleanup-plan-md orbits-artifacts/cleanup-plan.md --scale-proof-md orbits-artifacts/scale-proof.md --check
 ```
 
-It uploads `graph.json`, `dead-files.md`, `dead-files.csv`, check logs, and the generated PR comment body as the `orbits-report` artifact. On pull requests, it also tries to build a base-branch graph diff and update a sticky PR comment. Comment posting is best-effort; the check artifacts are still produced when the token cannot write comments.
+It uploads `graph.json`, reports, check logs, and the generated PR comment body as the `orbits-report` artifact. On pull requests, it also tries to build a base-branch architecture diff and update a sticky PR comment. Comment posting is best-effort; the check artifacts are still produced when the token cannot write comments.
 
 Configure thresholds in `codegraph.config.json` or `.orbits.json`:
 

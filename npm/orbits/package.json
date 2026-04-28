@@ -1,7 +1,7 @@
 {
   "name": "@yumekaz/orbits",
-  "version": "0.1.1",
-  "description": "npm wrapper for the Orbits codebase graph analyzer and dead-code detector.",
+  "version": "0.1.2",
+  "description": "npm wrapper for the Orbits codebase map and cleanup-confidence CLI.",
   "license": "UNLICENSED",
   "homepage": "https://github.com/Yumekaz/Orbits#readme",
   "repository": {

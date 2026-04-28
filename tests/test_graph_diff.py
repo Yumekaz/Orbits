@@ -24,6 +24,8 @@ def _base_graph():
             {'id': 'dead.py', 'classification': 'ORPHAN', 'confidence_score': 81, 'confidence_level': 'high'},
             {'id': 'shared.py', 'classification': 'ORPHAN', 'confidence_score': 55, 'confidence_level': 'medium'},
         ],
+        'cycles': [],
+        'summary': {'cycle_count': 0, 'health_score': 92},
         'meta': {'runtime': {'enabled': False, 'runtime_edges': 0}},
     }
 
@@ -47,6 +49,8 @@ def _current_graph():
             {'id': 'new.py', 'classification': 'ORPHAN', 'confidence_score': 79, 'confidence_level': 'high'},
             {'id': 'shared.py', 'classification': 'ORPHAN', 'confidence_score': 83, 'confidence_level': 'high'},
         ],
+        'cycles': [['app.py', 'new.py', 'app.py']],
+        'summary': {'cycle_count': 1, 'health_score': 76},
         'meta': {'runtime': {'enabled': True, 'runtime_edges': 1, 'stale': False}},
     }
 
@@ -69,6 +73,30 @@ class GraphDiffTests(unittest.TestCase):
         self.assertEqual(diff['confidence_changes']['changed'][0]['delta'], 28)
         self.assertFalse(diff['runtime']['before']['enabled'])
         self.assertTrue(diff['runtime']['after']['enabled'])
+        self.assertIn('architecture', diff)
+        self.assertEqual(diff['architecture']['impact']['level'], 'high')
+        self.assertEqual(
+            diff['architecture']['impact']['signals'],
+            [
+                'coupling_increased',
+                'new_cycles',
+                'new_dead_code',
+                'runtime_edges_changed',
+                'classification_changed',
+                'confidence_increased',
+            ],
+        )
+        self.assertEqual(diff['architecture']['coupling']['delta']['static_edges'], 1)
+        self.assertEqual(diff['architecture']['coupling']['added_dependencies'], 1)
+        self.assertEqual(diff['architecture']['coupling']['affected_nodes'], ['app.py', 'new.py'])
+        self.assertEqual(diff['architecture']['cycles']['before'], 0)
+        self.assertEqual(diff['architecture']['cycles']['after'], 1)
+        self.assertEqual(diff['architecture']['cycles']['added'], [['app.py', 'new.py', 'app.py']])
+        self.assertEqual(diff['architecture']['dead_code']['added'], ['new.py'])
+        self.assertEqual(diff['architecture']['runtime']['delta']['dynamic_edges'], 1)
+        self.assertEqual(diff['architecture']['classification']['changed'], 1)
+        self.assertEqual(diff['architecture']['confidence']['increased'], 1)
+        self.assertEqual(diff['architecture']['health']['delta'], -16)
 
     def test_waste_falls_back_to_node_classification(self):
         baseline = {'nodes': [{'id': 'old.py', 'classification': 'ORPHAN'}], 'edges': []}
@@ -94,6 +122,8 @@ class GraphDiffTests(unittest.TestCase):
         self.assertIn('Confidence changes: 1', text)
         self.assertIn('~ shared.py: 55 -> 83 (+28)', text)
         self.assertIn('Waste: 2 -> 2 (0)', text)
+        self.assertIn('Architecture impact: HIGH', text)
+        self.assertIn('Signals: coupling_increased, new_cycles, new_dead_code', text)
 
     def test_analyzer_cli_diff_json(self):
         with TemporaryDirectory() as tmp:
@@ -123,6 +153,8 @@ class GraphDiffTests(unittest.TestCase):
         self.assertEqual(payload['nodes']['added'], ['new.py'])
         self.assertEqual(payload['edges']['added'], [{'source': 'app.py', 'target': 'new.py'}])
         self.assertEqual(payload['dynamic_edges']['added'], [{'source': 'app.py', 'target': 'new.py'}])
+        self.assertEqual(payload['architecture']['impact']['level'], 'high')
+        self.assertEqual(payload['architecture']['cycles']['delta'], 1)
 
 
 if __name__ == '__main__':

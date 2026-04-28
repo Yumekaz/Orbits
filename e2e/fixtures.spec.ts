@@ -75,6 +75,7 @@ test.describe('fixture-specific behavior', () => {
     await expect(page.getByTestId('runtime-pill')).toContainText('2 sessions');
     await expect(page.getByTestId('warning-banner')).toContainText('Runtime trace stale');
 
+    await page.locator('[data-left-panel="waste-panel"]').click();
     await expect(page.locator('#waste-list')).toContainText('ORPHAN');
     await expect(page.locator('#waste-list')).toContainText('runtime stale');
     await page.locator('#waste-list .list-item').filter({ hasText: 'visualizer_worker.js' }).click();

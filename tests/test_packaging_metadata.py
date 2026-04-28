@@ -26,7 +26,19 @@ class PackagingMetadataTests(unittest.TestCase):
         setuptools_config = self.metadata['tool']['setuptools']
         modules = set(setuptools_config['py-modules'])
 
-        for module_name in {'analyzer', 'entrypoints', 'git_intel', 'graph_diff', 'graph_engine', 'lang_dispatch', 'orbits', 'runtime_trace'}:
+        for module_name in {
+            'analyzer',
+            'cleanup_plan',
+            'codebase_map',
+            'entrypoints',
+            'git_intel',
+            'graph_diff',
+            'graph_engine',
+            'lang_dispatch',
+            'orbits',
+            'runtime_trace',
+            'scale_proof',
+        }:
             self.assertIn(module_name, modules)
 
         package_includes = set(self.metadata['tool']['setuptools']['packages']['find']['include'])

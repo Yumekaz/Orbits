@@ -251,6 +251,7 @@ def _append_diff(lines: list[str], diff: dict[str, Any] | None, graph: dict[str,
     waste = diff.get('waste', {})
     classification_changes = _as_list(diff.get('classification_changes', {}).get('changed') if isinstance(diff.get('classification_changes'), dict) else [])
     confidence_changes = _as_list(diff.get('confidence_changes', {}).get('changed') if isinstance(diff.get('confidence_changes'), dict) else [])
+    architecture = diff.get('architecture', {}) if isinstance(diff.get('architecture'), dict) else {}
     new_dead_files = _as_list(waste.get('added'))
     resolved_dead_files = _as_list(waste.get('removed'))
     added_edges = _as_list(edges.get('added'))
@@ -275,6 +276,15 @@ def _append_diff(lines: list[str], diff: dict[str, Any] | None, graph: dict[str,
         ),
         '',
     ])
+    impact = architecture.get('impact', {}) if isinstance(architecture.get('impact'), dict) else {}
+    if impact:
+        signals = _as_list(impact.get('signals'))
+        signal_text = ', '.join(_markdown_cell(signal) for signal in signals) if signals else 'none'
+        lines.extend([
+            f"Architecture impact: **{str(impact.get('level', 'low')).upper()}**.",
+            f"Signals: {signal_text}.",
+            '',
+        ])
     _append_new_dead_file_rows(lines, graph, new_dead_files, limit)
     lines.append('')
 
@@ -294,6 +304,19 @@ def _append_diff(lines: list[str], diff: dict[str, Any] | None, graph: dict[str,
         f"| Dead files | {waste.get('before', 'n/a')} | {waste.get('after', 'n/a')} | {_delta(waste.get('delta', 'n/a'))} |",
         '',
     ])
+    if architecture:
+        coupling = architecture.get('coupling', {}) if isinstance(architecture.get('coupling'), dict) else {}
+        cycles = architecture.get('cycles', {}) if isinstance(architecture.get('cycles'), dict) else {}
+        health = architecture.get('health', {}) if isinstance(architecture.get('health'), dict) else {}
+        coupling_delta = coupling.get('delta', {}) if isinstance(coupling.get('delta'), dict) else {}
+        lines.extend([
+            '| Architecture signal | Delta |',
+            '| --- | ---: |',
+            f"| Static coupling edges | {_delta(coupling_delta.get('static_edges', 0))} |",
+            f"| Cycles | {_delta(cycles.get('delta', 0))} |",
+            f"| Health | {_delta(health.get('delta', 0))} |",
+            '',
+        ])
 
     details: list[str] = []
     for title, values, prefix in (
