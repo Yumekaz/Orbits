@@ -2,7 +2,7 @@
 
 const { spawnSync } = require('node:child_process');
 
-const PYPI_PACKAGE = process.env.ORBITS_PIP_PACKAGE || 'orbits-codebase==0.1.2';
+const PYPI_PACKAGE = process.env.ORBITS_PIP_PACKAGE || 'orbits-codebase==0.1.3';
 
 function pythonCandidates() {
   const candidates = [];

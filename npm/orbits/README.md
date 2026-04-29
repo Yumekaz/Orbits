@@ -23,4 +23,4 @@ Useful environment variables:
 - `ORBITS_PYTHON=/path/to/python` chooses the Python executable.
 - `ORBITS_SKIP_PIP_INSTALL=1` skips the npm postinstall pip step.
 - `ORBITS_NO_AUTO_INSTALL=1` prevents first-run auto-install.
-- `ORBITS_PIP_PACKAGE=orbits-codebase==0.1.2` overrides the PyPI package spec.
+- `ORBITS_PIP_PACKAGE=orbits-codebase==0.1.3` overrides the PyPI package spec.
