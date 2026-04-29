@@ -9,7 +9,7 @@
     TEST: { fill: 'rgba(109,133,193,.11)', stroke: '#6d85c1' },
     GENERATED: { fill: 'rgba(59,74,112,.1)', stroke: '#3d4a70' }
   };
-  const LANG_COLORS = { python: '#3b82f6', javascript: '#f59e0b', typescript: '#06b6d4', tsx: '#22d3ee', html: '#f97316', css: '#14b8a6', asset: '#94a3b8', go: '#10b981', c: '#fb7185', cpp: '#f97316', java: '#ef4444', kotlin: '#a855f7', generic: '#6b7280' };
+  const LANG_COLORS = { python: '#3b82f6', javascript: '#f59e0b', typescript: '#06b6d4', tsx: '#22d3ee', html: '#f97316', css: '#14b8a6', asset: '#94a3b8', go: '#10b981', c: '#fb7185', cpp: '#f97316', java: '#ef4444', kotlin: '#a855f7', rust: '#f97316', csharp: '#8b5cf6', php: '#6366f1', ruby: '#ef4444', json: '#22c55e', yaml: '#84cc16', toml: '#14b8a6', dockerfile: '#0ea5e9', 'docker-compose': '#38bdf8', makefile: '#eab308', shell: '#a3e635', sql: '#f472b6', 'github-actions': '#60a5fa', generic: '#6b7280', unknown: '#64748b' };
   const PKG_HINTS = { python: ['tree-sitter-python'], javascript: ['tree-sitter-javascript', 'tree-sitter-typescript'], typescript: ['tree-sitter-javascript', 'tree-sitter-typescript'], tsx: ['tree-sitter-javascript', 'tree-sitter-typescript'], go: ['tree-sitter-go'], c: ['tree-sitter-c'], cpp: ['tree-sitter-cpp'], java: ['tree-sitter-java'], kotlin: ['tree-sitter-kotlin'] };
   const PERF = {
     largeGraphNodes: 420,
@@ -139,7 +139,7 @@
   function basename(id) { const parts = normalizeId(id).split('/'); return parts[parts.length - 1] || id; }
   function dirname(id) { const parts = normalizeId(id).split('/'); parts.pop(); return parts.join('/') || '.'; }
   function escapeHtml(value) { return String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
-  function displayLang(lang) { return ({ javascript: 'JavaScript', typescript: 'TypeScript', tsx: 'TSX', html: 'HTML', css: 'CSS', asset: 'Asset', python: 'Python', go: 'Go', c: 'C', cpp: 'C/C++', java: 'Java', kotlin: 'Kotlin', generic: 'Generic' })[lang] || lang || 'Unknown'; }
+  function displayLang(lang) { return ({ javascript: 'JavaScript', typescript: 'TypeScript', tsx: 'TSX', html: 'HTML', css: 'CSS', asset: 'Asset', python: 'Python', go: 'Go', c: 'C', cpp: 'C/C++', java: 'Java', kotlin: 'Kotlin', rust: 'Rust', csharp: 'C#', php: 'PHP', ruby: 'Ruby', json: 'JSON', yaml: 'YAML', toml: 'TOML', dockerfile: 'Dockerfile', 'docker-compose': 'Docker Compose', makefile: 'Makefile', shell: 'Shell', sql: 'SQL', 'github-actions': 'GitHub Actions', generic: 'Generic', unknown: 'Unknown' })[lang] || lang || 'Unknown'; }
   function getTheme(cls) { return THEME[cls] || THEME.ORPHAN; }
   function getLangColor(lang) { return LANG_COLORS[(lang || '').toLowerCase()] || '#6b7280'; }
   function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
@@ -1119,6 +1119,11 @@
     if (runtimeMeta.enabled && runtimeMeta.stale) messages.push('<strong>Runtime trace stale</strong> Static analysis was refreshed after source changes. Re-run tracing to refresh dynamic edges.');
     if (runtimeMeta.enabled && runtimeMeta.timed_out) messages.push('<strong>Runtime trace partial</strong> The traced program timed out, so dynamic edges may be incomplete.');
     if (runtimeMeta.enabled && runtimeMeta.error) messages.push(`<strong>Runtime trace error</strong> ${escapeHtml(String(runtimeMeta.error))}`);
+    const coverage = APP.graph?.meta?.language_coverage;
+    const unknownCoverage = coverage?.confidence?.unknown || coverage?.unknown;
+    if (unknownCoverage && Number(unknownCoverage.files || 0) > 0) {
+      messages.push(`<strong>Coverage</strong> ${Number(unknownCoverage.files || 0)} files are mapped as unknown. They stay visible, but dependency confidence is limited.`);
+    }
     if (!messages.length || APP.state.dismissedWarning) { ELS['warning-banner'].classList.remove('show'); return; }
     ELS['warning-copy'].innerHTML = messages.join('<br><br>');
     ELS['warning-banner'].classList.add('show');
@@ -1488,8 +1493,11 @@
     const runtimeRow = runtimeMeta.enabled ? `<div class="kv-row"><span class="k">Runtime</span><span class="v context">${runtime.outEdges.length} out / ${runtime.inEdges.length} in${runtime.hits ? ` / ${runtime.hits} hits` : ''}</span></div>` : '';
     const traceRow = status ? `<div class="kv-row"><span class="k">Trace</span><span class="v context ${status.key === 'fresh' ? '' : 'warn'}">${escapeHtml([status.label, ...runtimeSummaryParts(runtimeMeta).slice(0, 2)].join(' • '))}</span></div>` : '';
     const originRow = node.runtime_only ? '<div class="kv-row"><span class="k">Origin</span><span class="v context runtime">Runtime-only node</span></div>' : '';
+    const analysisConfidence = node.analysis_confidence || 'unknown';
+    const analysisNote = node.analysis_note ? ` title="${escapeHtml(node.analysis_note)}"` : '';
+    const analysisRow = `<div class="kv-row"><span class="k">Analysis</span><span class="v context ${analysisConfidence === 'unknown' ? 'warn' : ''}"${analysisNote}>${escapeHtml(analysisConfidence)}${node.language_role ? ` / ${escapeHtml(node.language_role)}` : ''}</span></div>`;
     const confidence = nodeConfidenceContext(node);
-    ELS.imeta.innerHTML = `<div class="kv-row"><span class="k">Class</span><span class="v" style="color:${getTheme(classification).stroke}">${escapeHtml(classification)}</span></div>${originRow}<div class="kv-row"><span class="k">Size</span><span class="v">${formatSize(node.size)}</span></div><div class="kv-row"><span class="k">Inbound</span><span class="v">${inEdges.length}</span></div><div class="kv-row"><span class="k">Outbound</span><span class="v">${outEdges.length}</span></div><div class="kv-row"><span class="k">Language</span><span class="v" style="color:${getLangColor(node.language)}">${escapeHtml(node.language || '—')}</span></div><div class="kv-row"><span class="k">Depth</span><span class="v">${node.depth >= 0 ? node.depth : '∞'}</span></div><div class="kv-row"><span class="k">Island</span>${island}</div>${runtimeRow}${traceRow}<div class="kv-row"><span class="k">Modified</span><span class="v context">${formatDate(node.mtime)}</span></div><div class="kv-row"><span class="k">Confidence</span><span class="v context ${runtimeMeta.stale || node.runtime_only ? 'warn' : ''}">${escapeHtml(confidence)}</span></div>`;
+    ELS.imeta.innerHTML = `<div class="kv-row"><span class="k">Class</span><span class="v" style="color:${getTheme(classification).stroke}">${escapeHtml(classification)}</span></div>${originRow}<div class="kv-row"><span class="k">Size</span><span class="v">${formatSize(node.size)}</span></div><div class="kv-row"><span class="k">Inbound</span><span class="v">${inEdges.length}</span></div><div class="kv-row"><span class="k">Outbound</span><span class="v">${outEdges.length}</span></div><div class="kv-row"><span class="k">Language</span><span class="v" style="color:${getLangColor(node.language)}">${escapeHtml(displayLang(node.language) || '—')}</span></div>${analysisRow}<div class="kv-row"><span class="k">Depth</span><span class="v">${node.depth >= 0 ? node.depth : '∞'}</span></div><div class="kv-row"><span class="k">Island</span>${island}</div>${runtimeRow}${traceRow}<div class="kv-row"><span class="k">Modified</span><span class="v context">${formatDate(node.mtime)}</span></div><div class="kv-row"><span class="k">Confidence</span><span class="v context ${runtimeMeta.stale || node.runtime_only ? 'warn' : ''}">${escapeHtml(confidence)}</span></div>`;
     const cycles = APP.indexes.cycleMembershipByNode.get(node.id) || [];
     ELS.icycle.innerHTML = cycles.length ? cycles.map((entry) => `<div class="chip-cont"><div style="font-size:9px;color:var(--amber);letter-spacing:.12em;text-transform:uppercase">Cycle ${entry.index + 1}</div><div class="cycle-path">${entry.path.map((id, idx) => `${idx ? '<span class="cycle-arrow">→</span>' : ''}<span class="chip cycle" data-focus="${escapeHtml(id)}">${escapeHtml(basename(id))}</span>`).join('')}</div></div>`).join('') : '<div style="color:var(--dim);font-size:10px">This node is not part of a cycle.</div>';
     ELS.icycle.querySelectorAll('[data-focus]').forEach((chip) => chip.addEventListener('click', () => focusNode(chip.dataset.focus)));

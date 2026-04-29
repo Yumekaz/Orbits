@@ -19,6 +19,7 @@ from pathlib import Path
 from cache import CachedFile, ImportCache
 from crawler import SKIP_DIRS, SKIP_EXTENSIONS
 from entrypoints import detect_entrypoints
+from language_coverage import annotate_node_language, build_language_coverage
 from path_utils import relative_to_root
 from worker import WorkerResult, run_worker
 
@@ -35,7 +36,21 @@ LANG_DISPLAY = {
     'cpp': 'C/C++',
     'java': 'Java',
     'kotlin': 'Kotlin',
+    'rust': 'Rust',
+    'csharp': 'C#',
+    'php': 'PHP',
+    'ruby': 'Ruby',
+    'json': 'JSON',
+    'yaml': 'YAML',
+    'toml': 'TOML',
+    'dockerfile': 'Dockerfile',
+    'docker-compose': 'Docker Compose',
+    'makefile': 'Makefile',
+    'shell': 'Shell',
+    'sql': 'SQL',
+    'github-actions': 'GitHub Actions',
     'generic': 'Generic',
+    'unknown': 'Unknown',
 }
 
 EXT_TO_LANG = {
@@ -50,9 +65,38 @@ EXT_TO_LANG = {
     '.h': 'cpp', '.hh': 'cpp', '.hpp': 'cpp', '.hxx': 'cpp', '.cc': 'cpp', '.cpp': 'cpp', '.cxx': 'cpp',
     '.java': 'java',
     '.kt': 'kotlin', '.kts': 'kotlin',
-    '.rb': 'generic', '.rs': 'generic', '.cs': 'generic',
-    '.swift': 'generic', '.lua': 'generic', '.php': 'generic', '.dart': 'generic', '.scala': 'generic',
+    '.rb': 'ruby',
+    '.rs': 'rust',
+    '.cs': 'csharp',
+    '.php': 'php',
+    '.json': 'json', '.jsonc': 'json', '.webmanifest': 'json',
+    '.yaml': 'yaml', '.yml': 'yaml',
+    '.toml': 'toml',
+    '.sh': 'shell', '.bash': 'shell', '.zsh': 'shell', '.fish': 'shell', '.ps1': 'shell',
+    '.sql': 'sql',
+    '.mk': 'makefile',
+    '.swift': 'generic', '.lua': 'generic', '.dart': 'generic', '.scala': 'generic',
 }
+
+ALLOWED_HIDDEN_DIRS = {'.github'}
+MAKEFILE_NAMES = {'makefile', 'gnumakefile'}
+DOCKER_COMPOSE_NAMES = {'docker-compose.yml', 'docker-compose.yaml', 'compose.yml', 'compose.yaml'}
+
+
+def detect_language(filepath: Path, root: Path) -> str:
+    rel = relative_to_root(filepath, root) or filepath.name
+    rel_l = rel.lower().replace('\\', '/')
+    name_l = filepath.name.lower()
+
+    if rel_l.startswith('.github/workflows/') and filepath.suffix.lower() in {'.yml', '.yaml'}:
+        return 'github-actions'
+    if name_l in DOCKER_COMPOSE_NAMES:
+        return 'docker-compose'
+    if name_l == 'dockerfile' or name_l.startswith('dockerfile.'):
+        return 'dockerfile'
+    if name_l in MAKEFILE_NAMES or filepath.name in {'Makefile', 'GNUmakefile'}:
+        return 'makefile'
+    return EXT_TO_LANG.get(filepath.suffix.lower(), 'unknown')
 
 
 def _as_list(value) -> list[str]:
@@ -96,7 +140,7 @@ def crawl_all(root: Path, config: dict | None = None) -> dict[str, list[Path]]:
         kept_dirs = []
         for dirname in dirnames:
             dir_rel = relative_to_root(Path(dirpath) / dirname, root) or dirname
-            if dirname in SKIP_DIRS or dirname.startswith('.') or dirname.endswith('.egg-info'):
+            if dirname in SKIP_DIRS or (dirname.startswith('.') and dirname not in ALLOWED_HIDDEN_DIRS) or dirname.endswith('.egg-info'):
                 continue
             if _ignored_dir(dirname, dir_rel, ignore_dirs):
                 continue
@@ -111,7 +155,7 @@ def crawl_all(root: Path, config: dict | None = None) -> dict[str, list[Path]]:
             rel = relative_to_root(filepath, root)
             if not rel or _ignored_file(filename, rel, ignore_files):
                 continue
-            lang = EXT_TO_LANG.get(filepath.suffix.lower())
+            lang = detect_language(filepath, root)
             if lang:
                 buckets.setdefault(lang, []).append(filepath)
 
@@ -219,7 +263,21 @@ def _detect_language_support() -> dict[str, dict[str, str | bool]]:
         'cpp': {'available': c_grammars is not None, 'reason': ''},
         'java': {'available': jvm_grammars is not None, 'reason': ''},
         'kotlin': {'available': jvm_grammars is not None, 'reason': ''},
+        'rust': {'available': True, 'reason': ''},
+        'csharp': {'available': True, 'reason': ''},
+        'php': {'available': True, 'reason': ''},
+        'ruby': {'available': True, 'reason': ''},
+        'json': {'available': True, 'reason': ''},
+        'yaml': {'available': True, 'reason': ''},
+        'toml': {'available': True, 'reason': ''},
+        'dockerfile': {'available': True, 'reason': ''},
+        'docker-compose': {'available': True, 'reason': ''},
+        'makefile': {'available': True, 'reason': ''},
+        'shell': {'available': True, 'reason': ''},
+        'sql': {'available': True, 'reason': ''},
+        'github-actions': {'available': True, 'reason': ''},
         'generic': {'available': True, 'reason': ''},
+        'unknown': {'available': True, 'reason': ''},
     }
 
     if not py_grammar:
@@ -308,6 +366,8 @@ def extract_all(root: Path, verbose: bool = True, config: dict | None = None) ->
                 'mtime': round(stat.st_mtime),
                 'dir': relative_to_root(filepath.parent, root) if filepath.parent != root else '.',
             }
+            status = language_support.get(lang, {'available': True})
+            annotate_node_language(nodes[rel], parser_available=bool(status.get('available', True)))
 
     node_ids = list(nodes.keys())
     resolver_config = _build_resolver_config(root, node_ids, config=config)
@@ -403,9 +463,13 @@ def extract_all(root: Path, verbose: bool = True, config: dict | None = None) ->
     total_imports = sum(total_stats.values())
     pct = round(total_stats['local'] / total_imports * 100, 1) if total_imports else 0.0
     elapsed = time.time() - t_start
-    languages = list(buckets.keys())
-    if any(node.get('language') == 'asset' for node in nodes.values()) and 'asset' not in languages:
-        languages.append('asset')
+    for node in nodes.values():
+        lang = node.get('language', 'unknown')
+        status = language_support.get(lang, {'available': True})
+        annotate_node_language(node, parser_available=bool(status.get('available', True)))
+
+    languages = sorted({str(node.get('language') or 'unknown') for node in nodes.values()})
+    language_coverage = build_language_coverage(list(nodes.values()), language_support)
 
     log(
         f"  Imports:   {total_imports} total - "
@@ -419,6 +483,12 @@ def extract_all(root: Path, verbose: bool = True, config: dict | None = None) ->
         log(f"  Skipped:   {total_syntax_errors} files with syntax errors")
     if unsupported_languages:
         log('  Support:   parser packages missing for some detected languages')
+    coverage_bits = language_coverage.get('confidence', {})
+    log(
+        f"  Coverage:  deep {coverage_bits.get('deep', {}).get('percent', 0)}%  "
+        f"partial {coverage_bits.get('partial', {}).get('percent', 0)}%  "
+        f"unknown {coverage_bits.get('unknown', {}).get('percent', 0)}%"
+    )
     log(f"  Time:      {elapsed:.2f}s")
 
     return {
@@ -434,6 +504,7 @@ def extract_all(root: Path, verbose: bool = True, config: dict | None = None) ->
             'phase': 3,
             'elapsed_s': round(elapsed, 2),
             'language_support': language_support,
+            'language_coverage': language_coverage,
             'unsupported_languages': unsupported_languages,
             'intentional_files': intentional_files,
             'entrypoints': entrypoints,

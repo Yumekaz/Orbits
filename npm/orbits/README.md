@@ -7,6 +7,7 @@ npm install -g @yumekaz/orbits
 orbits scan . --open
 orbits cleanup-plan .
 orbits scale-proof .
+orbits language-coverage .
 ```
 
 This package installs the Python package `orbits-codebase` from PyPI during `postinstall`, then exposes the `orbits` command through npm.

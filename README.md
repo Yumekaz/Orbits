@@ -13,6 +13,7 @@ The current stack is:
 - first-class HTML/CSS/static-asset graph extraction for web projects
 - optional Python and Node.js runtime tracing with merged dynamic-edge overlays
 - codebase-map intelligence for regions, entrypoints, core hubs, impact, framework signals, and runtime command discovery
+- Phase 6 language coverage with deep/partial/unknown confidence per file, named partial support, production glue files, and unknown-file mapping
 
 ## Quick Start
 
@@ -61,6 +62,7 @@ orbits scan . -o graph.json
 orbits scan . --open
 orbits cleanup-plan .
 orbits scale-proof .
+orbits language-coverage .
 orbits --diff C:/temp/old-graph.json C:/temp/new-graph.json
 python -m orbits scan . --open
 ```
@@ -83,6 +85,7 @@ orbits scan . --open
 - Computes cycles, islands, orphans, depth, health, and summary stats
 - Detects common project entrypoints so launch files are not reported as dead just because nothing imports them
 - Adds a higher-level codebase map with regions, core hubs, isolated areas, framework signals, runtime command suggestions, and per-file impact metrics
+- Adds per-file language coverage confidence so unsupported files remain visible instead of disappearing from the map
 - Scores dead-code confidence from structure, git age/churn, and runtime touch evidence
 - Produces PR-friendly architecture diffs, including coupling, cycle, dead-file, classification, confidence, health, and runtime-edge changes
 - Writes cleanup plans and scale-proof reports for CI, demos, and review
@@ -94,10 +97,11 @@ orbits scan . --open
 orbits scan . --open
 orbits cleanup-plan . --cleanup-plan-md cleanup-plan.md
 orbits scale-proof . --scale-proof-md scale-proof.md
+orbits language-coverage . --language-coverage-md language-coverage.md
 orbits --diff old-graph.json new-graph.json --diff-json
 ```
 
-`scan` writes the graph and opens the guided map UI. `cleanup-plan` groups dead-code candidates into safe, risky, and manual-review buckets with evidence. `scale-proof` summarizes repo size, language mix, edge counts, largest files, and scan metadata.
+`scan` writes the graph and opens the guided map UI. `cleanup-plan` groups dead-code candidates into safe, risky, and manual-review buckets with evidence. `scale-proof` summarizes repo size, language mix, edge counts, largest files, and scan metadata. `language-coverage` reports how much of the repo is deep, partial, or unknown analysis.
 
 ## Entrypoint Detection
 
@@ -119,9 +123,34 @@ First-class extraction and resolution:
 - CSS / SCSS / Sass / Less
 - referenced static assets such as images, fonts, JSON, PDFs, media, and Wasm
 
+Named partial extraction and mapping:
+
+- Rust
+- C#
+- PHP
+- Ruby
+- JSON
+- YAML
+- TOML
+- Dockerfile
+- Docker Compose
+- Makefile
+- Shell scripts
+- SQL
+- GitHub Actions workflows
+
 Fallback:
 
-- Generic regex-based extraction for unsupported or unknown languages
+- Unknown-language files remain visible in the map with `analysis_confidence: "unknown"`
+- Generic regex-based extraction is used where a safe import-like pattern is available
+
+Every node includes:
+
+- `analysis_confidence`: `deep`, `partial`, or `unknown`
+- `language_role`: source, config, build, ci, script, data, asset, or unknown
+- `analysis_note`: the honest reason for that confidence level
+
+The graph metadata includes `meta.language_coverage`, including file counts and percentages for deep, partial, and unknown coverage.
 
 ## Pipeline
 
@@ -411,6 +440,7 @@ Write explicit dead-file reports:
 orbits scan /path/to/project --dead-report-md dead-files.md --dead-report-csv dead-files.csv
 orbits cleanup-plan /path/to/project --cleanup-plan-md cleanup-plan.md
 orbits scale-proof /path/to/project --scale-proof-md scale-proof.md
+orbits language-coverage /path/to/project --language-coverage-md language-coverage.md
 ```
 
 When the analyzed root is inside a Git worktree, each dead-file item is also
@@ -437,7 +467,7 @@ orbits scan /path/to/project --check --max-orphans 0 --max-islands 1 --min-healt
 The included Orbits workflow runs the same CLI check on pushes and pull requests:
 
 ```bash
-orbits scan . -o orbits-artifacts/graph.json --dead-report-md orbits-artifacts/dead-files.md --dead-report-csv orbits-artifacts/dead-files.csv --cleanup-plan-md orbits-artifacts/cleanup-plan.md --scale-proof-md orbits-artifacts/scale-proof.md --check
+orbits scan . -o orbits-artifacts/graph.json --dead-report-md orbits-artifacts/dead-files.md --dead-report-csv orbits-artifacts/dead-files.csv --cleanup-plan-md orbits-artifacts/cleanup-plan.md --scale-proof-md orbits-artifacts/scale-proof.md --language-coverage-md orbits-artifacts/language-coverage.md --check
 ```
 
 It uploads `graph.json`, reports, check logs, and the generated PR comment body as the `orbits-report` artifact. On pull requests, it also tries to build a base-branch architecture diff and update a sticky PR comment. Comment posting is best-effort; the check artifacts are still produced when the token cannot write comments.

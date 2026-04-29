@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
+from language_coverage import annotate_node_language
 from path_utils import relative_to_root
 
 
@@ -55,7 +56,21 @@ def _run(language, file_strs, root_str, cache_data, resolver_config):
         'cpp': CppExtractor(),
         'java': JavaExtractor(),
         'kotlin': KotlinExtractor(),
+        'rust': GenericExtractor(),
+        'csharp': GenericExtractor(),
+        'php': GenericExtractor(),
+        'ruby': GenericExtractor(),
+        'json': GenericExtractor(),
+        'yaml': GenericExtractor(),
+        'toml': GenericExtractor(),
+        'dockerfile': GenericExtractor(),
+        'docker-compose': GenericExtractor(),
+        'makefile': GenericExtractor(),
+        'shell': GenericExtractor(),
+        'sql': GenericExtractor(),
+        'github-actions': GenericExtractor(),
         'generic': GenericExtractor(),
+        'unknown': GenericExtractor(),
     }
 
     extractor = extractor_map.get(language)
@@ -155,6 +170,7 @@ def _add_asset_node(result: WorkerResult, root: Path, relpath: str) -> None:
         'mtime': round(stat.st_mtime),
         'dir': relative_to_root(path.parent, root) if path.parent != root else '.',
     }
+    annotate_node_language(result.extra_nodes[relpath])
 
 
 def _make_resolver(language: str, root: Path, config: dict):
@@ -233,15 +249,11 @@ def _make_resolver(language: str, root: Path, config: dict):
         resolver = JvmResolver(root, jvm_cfg)
         return lambda imp_dict, lang, filepath, root: resolver.resolve(imp_dict.get('raw', ''))
 
-    web_resolver = WebResolver(root)
+    partial_resolver = PartialLanguageResolver(root)
 
     def resolve_generic(imp_dict, lang, filepath, root):
         raw = imp_dict.get('raw', '')
-        if imp_dict.get('is_relative'):
-            rel, kind = web_resolver.resolve(raw, from_file=filepath)
-            if rel:
-                return rel, kind
-        return None, 'UNKNOWN'
+        return partial_resolver.resolve(raw, language=lang, from_file=filepath, kind=imp_dict.get('kind', 'import'))
 
     return resolve_generic
 
@@ -252,6 +264,12 @@ class WebResolver:
         '.css', '.scss', '.sass', '.less',
         '.js', '.mjs', '.cjs', '.jsx',
         '.ts', '.mts', '.cts', '.tsx',
+        '.py', '.pyi', '.go',
+        '.c', '.h', '.hh', '.hpp', '.hxx', '.cc', '.cpp', '.cxx',
+        '.java', '.kt', '.kts',
+        '.rs', '.cs', '.php', '.rb',
+        '.json', '.jsonc', '.yaml', '.yml', '.toml',
+        '.sql', '.sh', '.bash', '.zsh', '.fish', '.ps1', '.mk',
     }
     asset_extensions = {
         '.avif', '.bmp', '.gif', '.ico', '.jpeg', '.jpg', '.png', '.svg', '.webp',
@@ -323,8 +341,96 @@ class WebResolver:
                 return None
             return base
         if not base.suffix:
-            for suffix in ('.html', '.htm', '.css', '.js', '.mjs', '.ts'):
+            for suffix in (
+                '.html', '.htm', '.css', '.js', '.mjs', '.ts', '.tsx',
+                '.py', '.go', '.rs', '.cs', '.php', '.rb',
+                '.sql', '.sh', '.yml', '.yaml', '.toml',
+            ):
                 candidate = base.with_suffix(suffix)
                 if candidate.exists():
                     return candidate
         return None
+
+
+class PartialLanguageResolver:
+    def __init__(self, root: Path):
+        self.root = root.resolve()
+        self.web = WebResolver(root)
+
+    def resolve(self, raw: str, language: str, from_file: Path, kind: str = 'import') -> tuple[str | None, str]:
+        cleaned = str(raw or '').strip().strip('"\'')
+        if not cleaned:
+            return None, 'UNKNOWN'
+        if language in {'json', 'yaml', 'toml'}:
+            return None, 'UNKNOWN'
+        if language == 'rust':
+            return self._resolve_rust(cleaned, from_file, kind)
+        if language == 'csharp':
+            return self._resolve_csharp(cleaned)
+        if language in {'ruby', 'php', 'shell', 'sql', 'makefile', 'dockerfile', 'docker-compose', 'github-actions', 'generic', 'unknown'}:
+            return self._resolve_path_like(cleaned, from_file)
+        return self._resolve_path_like(cleaned, from_file)
+
+    def _resolve_path_like(self, raw: str, from_file: Path) -> tuple[str | None, str]:
+        rel, kind = self.web.resolve(raw, from_file=from_file)
+        if rel:
+            return rel, kind
+        if raw.startswith(('http://', 'https://', 'git@')) or '://' in raw:
+            return None, 'EXTERNAL'
+        return None, 'UNKNOWN'
+
+    def _resolve_rust(self, raw: str, from_file: Path, kind: str) -> tuple[str | None, str]:
+        if kind == 'module':
+            module = raw.replace('::', '/').strip('/')
+            candidates = [
+                from_file.parent / f'{module}.rs',
+                from_file.parent / module / 'mod.rs',
+            ]
+            return self._first_existing(candidates)
+
+        cleaned = raw
+        for prefix in ('crate::', 'self::', 'super::'):
+            if cleaned.startswith(prefix):
+                cleaned = cleaned[len(prefix):]
+                break
+        parts = [part for part in cleaned.split('::') if part and part != '*']
+        if not parts:
+            return None, 'UNKNOWN'
+        module_path = Path(*parts)
+        roots = [self.root]
+        if (self.root / 'src').is_dir():
+            roots.insert(0, self.root / 'src')
+        if raw.startswith('super::'):
+            roots.insert(0, from_file.parent.parent)
+        elif raw.startswith('self::'):
+            roots.insert(0, from_file.parent)
+        candidates = []
+        for base in roots:
+            candidates.extend([base / f'{module_path}.rs', base / module_path / 'mod.rs'])
+        return self._first_existing(candidates)
+
+    def _resolve_csharp(self, raw: str) -> tuple[str | None, str]:
+        if raw.startswith(('System', 'Microsoft')):
+            return None, 'STDLIB'
+        symbol = raw.split('.')[-1]
+        if not symbol:
+            return None, 'UNKNOWN'
+        needle_set = (f'class {symbol}', f'interface {symbol}', f'record {symbol}', f'struct {symbol}')
+        for path in self.root.rglob('*.cs'):
+            try:
+                text = path.read_text(encoding='utf-8', errors='replace')
+            except OSError:
+                continue
+            if any(needle in text for needle in needle_set):
+                rel = relative_to_root(path, self.root)
+                if rel:
+                    return rel, 'LOCAL'
+        return None, 'UNKNOWN'
+
+    def _first_existing(self, candidates: list[Path]) -> tuple[str | None, str]:
+        for candidate in candidates:
+            if candidate.exists() and candidate.is_file():
+                rel = relative_to_root(candidate, self.root)
+                if rel:
+                    return rel, 'LOCAL'
+        return None, 'UNKNOWN'

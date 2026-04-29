@@ -25,21 +25,23 @@ from pathlib import Path
 from .base import BaseExtractor, ExtractResult, RawImport
 
 
-# Conservative patterns — only match string literals to avoid grabbing
-# variable names, comments etc.
+# Conservative patterns: prefer literal paths and common module statements.
 _PATTERNS = [
-    # import "something" or import 'something'
-    re.compile(r'''^\s*import\s+["']([^"']+)["']''', re.MULTILINE),
-    # from "something" import ... or from 'something' import ...
-    re.compile(r'''^\s*from\s+["']([^"']+)["']\s+import''', re.MULTILINE),
-    # require "something" or require 'something'
-    re.compile(r'''^\s*require\s+["']([^"']+)["']''', re.MULTILINE),
-    # require("something") or require('something')
-    re.compile(r'''require\s*\(\s*["']([^"']+)["']\s*\)'''),
-    # #include "something.h" (local includes only, not <system>)
-    re.compile(r'''^\s*#include\s+"([^"]+)"''', re.MULTILINE),
-    # use something::module; (Rust / Perl)
-    re.compile(r'''^\s*use\s+([\w:]+)\s*;''', re.MULTILINE),
+    (re.compile(r'''^\s*import\s+["']([^"']+)["']''', re.MULTILINE), 'import'),
+    (re.compile(r'''^\s*from\s+["']([^"']+)["']\s+import''', re.MULTILINE), 'import'),
+    (re.compile(r'''^\s*require_relative\s+["']([^"']+)["']''', re.MULTILINE), 'require_relative'),
+    (re.compile(r'''^\s*(?:require|load)\s+["']([^"']+)["']''', re.MULTILINE), 'require'),
+    (re.compile(r'''require\s*\(\s*["']([^"']+)["']\s*\)'''), 'require'),
+    (re.compile(r'''(?:^|<\?php\s*)(?:require_once|require|include_once|include)\s*\(?\s*["']([^"']+)["']''', re.MULTILINE), 'include'),
+    (re.compile(r'''^\s*#include\s+"([^"]+)"''', re.MULTILINE), 'include'),
+    (re.compile(r'''^\s*mod\s+([A-Za-z_][\w]*)\s*;''', re.MULTILINE), 'module'),
+    (re.compile(r'''^\s*use\s+([\w:]+)(?:::\{[^}]*\})?\s*;''', re.MULTILINE), 'use'),
+    (re.compile(r'''^\s*using\s+([A-Z][\w.]+)\s*;''', re.MULTILINE), 'using'),
+    (re.compile(r'''^\s*source\s+([^\s;&|]+)''', re.MULTILINE), 'source'),
+    (re.compile(r'''^\s*\.\s+([^\s;&|]+)''', re.MULTILINE), 'source'),
+    (re.compile(r'''^\s*(?:include|-?include)\s+([^\s#]+)''', re.MULTILINE), 'include'),
+    (re.compile(r'''^\s*(?:\\i|\.read|SOURCE)\s+([^\s;]+)''', re.MULTILINE | re.IGNORECASE), 'include'),
+    (re.compile(r'''^\s*(?:COPY|ADD)\s+(?:--[^\s]+\s+)*([^\s\[]+|"[^"]+"|'[^']+')''', re.MULTILINE), 'copy'),
 ]
 
 # Extensions this extractor will handle as a last resort
@@ -57,6 +59,13 @@ _GENERIC_EXTENSIONS = {
     '.dart',  # Dart
     '.scala', # Scala
     '.m',     # Objective-C
+    '.json', '.jsonc',
+    '.yaml', '.yml',
+    '.toml',
+    '.sql',
+    '.sh', '.bash', '.zsh', '.fish', '.ps1',
+    '.mk',
+    '',       # extensionless files such as Makefile/Dockerfile
 }
 
 
@@ -84,10 +93,13 @@ class GenericExtractor(BaseExtractor):
         imports: list[RawImport] = []
         seen: set[tuple] = set()
 
-        for pattern in _PATTERNS:
+        for pattern, kind in _PATTERNS:
             for match in pattern.finditer(source):
                 raw = match.group(1).strip()
                 if not raw:
+                    continue
+                raw = raw.strip('"\'')
+                if raw in {'.', '..'}:
                     continue
 
                 # Get approximate line number from match position
@@ -103,6 +115,8 @@ class GenericExtractor(BaseExtractor):
                     raw.startswith('./')
                     or raw.startswith('../')
                     or raw.startswith('".')
+                    or raw.startswith('/')
+                    or kind in {'require_relative', 'source', 'module', 'copy'}
                     or (filepath.suffix in {'.c', '.cpp', '.h', '.hpp', '.cc', '.cxx'}
                         and not raw.startswith('<'))  # C local include
                 )
@@ -111,7 +125,7 @@ class GenericExtractor(BaseExtractor):
                     source_file=file_rel,
                     raw=raw,
                     line=line,
-                    kind='include' if filepath.suffix in {'.c', '.cpp', '.h', '.hpp', '.cc', '.cxx'} else 'import',
+                    kind='include' if filepath.suffix in {'.c', '.cpp', '.h', '.hpp', '.cc', '.cxx'} else kind,
                     is_relative=is_relative,
                 ))
 

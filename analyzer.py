@@ -33,6 +33,7 @@ from git_intel import enrich_dead_code_confidence, flatten_waste_for_report
 from graph_diff import diff_graph_files, format_graph_diff
 from graph_engine import analyze_graph
 from lang_dispatch import extract_all
+from language_coverage import format_language_coverage_markdown
 from runtime_trace import (
     CppRuntimeTraceConfig,
     NodeRuntimeTraceConfig,
@@ -44,7 +45,7 @@ from scale_proof import build_scale_proof, format_scale_proof_markdown
 
 
 CONFIG_FILENAMES = ('codegraph.config.json', '.orbits.json')
-CLI_COMMANDS = {'scan', 'cleanup-plan', 'scale-proof'}
+CLI_COMMANDS = {'scan', 'cleanup-plan', 'scale-proof', 'language-coverage'}
 
 
 def _as_string_list(value) -> list[str]:
@@ -623,6 +624,13 @@ def run(
         if unsupported:
             labels = ', '.join(item['language'] for item in unsupported)
             print(f"  Missing:   parser support unavailable for {labels}", file=sys.stderr)
+        coverage = meta.get('language_coverage', {})
+        confidence = coverage.get('confidence', {}) if isinstance(coverage, dict) else {}
+        if confidence:
+            deep = confidence.get('deep', {}).get('percent', 0)
+            partial = confidence.get('partial', {}).get('percent', 0)
+            unknown = confidence.get('unknown', {}).get('percent', 0)
+            print(f"  Coverage:  deep {deep}%  partial {partial}%  unknown {unknown}%", file=sys.stderr)
         runtime_meta = meta.get('runtime', {})
         if runtime_meta.get('enabled'):
             print(
@@ -840,7 +848,7 @@ def main(argv: list[str] | None = None):
         description='Orbits - multi-language codebase dependency graph and dead code detector',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Supports: Python, JavaScript, TypeScript, Go + generic fallback
+Supports: deep parsers, named partial languages, production glue files, and unknown-file mapping
 Phase 5: optional Python, Node.js, and scoped C/C++ runtime tracing
 
 Examples:
@@ -848,6 +856,7 @@ Examples:
   orbits scan . --open
   orbits cleanup-plan .
   orbits scale-proof .
+  orbits language-coverage .
   orbits scan ~/projects/myapp -o graph.json --open
   orbits --diff old_graph.json new_graph.json
         """,
@@ -873,6 +882,7 @@ Examples:
     parser.add_argument('--dead-report-csv', help='Write a CSV report of actionable dead files to this path; use - for stdout')
     parser.add_argument('--cleanup-plan-md', help='Write a Markdown cleanup plan to this path; use - for stdout')
     parser.add_argument('--scale-proof-md', help='Write a Markdown scale proof report to this path; use - for stdout')
+    parser.add_argument('--language-coverage-md', help='Write a Markdown language coverage report to this path; use - for stdout')
     parser.add_argument('--check', action='store_true', help='Exit nonzero when configured or flag-provided thresholds are exceeded')
     parser.add_argument('--max-orphans', type=int, help='Check threshold: maximum actionable orphan files')
     parser.add_argument('--max-islands', type=int, help='Check threshold: maximum actionable island clusters')
@@ -892,7 +902,7 @@ Examples:
     if not args.path:
         parser.error('path is required unless --diff is used')
 
-    print('\nOrbits - Phase 5', file=sys.stderr)
+    print('\nOrbits - Phase 6', file=sys.stderr)
     print(f"{'-' * 40}", file=sys.stderr)
 
     root_path = Path(args.path).resolve()
@@ -976,6 +986,12 @@ Examples:
         _write_markdown_report(scale_markdown, scale_output)
         if scale_output != '-':
             print(f"  Scale:     {scale_output}", file=sys.stderr)
+    if command == 'language-coverage' or args.language_coverage_md:
+        coverage_markdown = format_language_coverage_markdown(graph.get('meta', {}).get('language_coverage', {}))
+        coverage_output = args.language_coverage_md or '-'
+        _write_markdown_report(coverage_markdown, coverage_output)
+        if coverage_output != '-':
+            print(f"  Coverage:  {coverage_output}", file=sys.stderr)
     print(f"  Output:    {output_path}", file=sys.stderr)
     print(f"{'-' * 40}\n", file=sys.stderr)
 

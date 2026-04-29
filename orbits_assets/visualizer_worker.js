@@ -30,7 +30,26 @@ const LANG_BY_EXT = new Map([
   ['.java', 'java'],
   ['.kt', 'kotlin'],
   ['.kts', 'kotlin'],
+  ['.rs', 'rust'],
+  ['.cs', 'csharp'],
+  ['.php', 'php'],
+  ['.rb', 'ruby'],
+  ['.json', 'json'],
+  ['.jsonc', 'json'],
+  ['.yml', 'yaml'],
+  ['.yaml', 'yaml'],
+  ['.toml', 'toml'],
+  ['.sh', 'shell'],
+  ['.bash', 'shell'],
+  ['.zsh', 'shell'],
+  ['.fish', 'shell'],
+  ['.ps1', 'shell'],
+  ['.sql', 'sql'],
+  ['.mk', 'makefile'],
 ]);
+
+const DEEP_LANGS = new Set(['python', 'javascript', 'typescript', 'tsx', 'go', 'c', 'cpp', 'java', 'kotlin', 'html', 'css']);
+const PARTIAL_LANGS = new Set(['rust', 'csharp', 'php', 'ruby', 'json', 'yaml', 'toml', 'dockerfile', 'docker-compose', 'makefile', 'shell', 'sql', 'github-actions']);
 
 self.onmessage = async (event) => {
   const { type, payload } = event.data || {};
@@ -72,6 +91,11 @@ function analyzeProject(rawFiles, rootName, started) {
       filepath: file.path,
       name: basename(file.path),
       language: file.language,
+      language_label: displayLang(file.language),
+      language_role: languageRole(file.language),
+      analysis_tier: analysisConfidence(file.language),
+      analysis_confidence: analysisConfidence(file.language),
+      analysis_note: analysisNote(file.language),
       size: file.size,
       mtime: file.mtime,
       dir: dirname(file.path),
@@ -114,6 +138,7 @@ function analyzeProject(rawFiles, rootName, started) {
       total_files: nodes.length,
       total_edges: edges.length,
       import_stats: importStats,
+      language_coverage: buildLanguageCoverage(nodes),
       unsupported_languages: [],
       elapsed_s: ((Date.now() - started) / 1000).toFixed(2),
     },
@@ -136,7 +161,76 @@ function normalizeFile(file) {
     size: file.size || 0,
     mtime: file.mtime || 0,
     ext,
-    language: LANG_BY_EXT.get(ext) || null,
+    language: detectLanguage(path, ext),
+  };
+}
+
+function detectLanguage(path, ext) {
+  const name = basename(path).toLowerCase();
+  const lower = normalizePath(path).toLowerCase();
+  if (lower.startsWith('.github/workflows/') && (ext === '.yml' || ext === '.yaml')) return 'github-actions';
+  if (['docker-compose.yml', 'docker-compose.yaml', 'compose.yml', 'compose.yaml'].includes(name)) return 'docker-compose';
+  if (name === 'dockerfile' || name.startsWith('dockerfile.')) return 'dockerfile';
+  if (name === 'makefile' || name === 'gnumakefile') return 'makefile';
+  return LANG_BY_EXT.get(ext) || 'unknown';
+}
+
+function analysisConfidence(language) {
+  if (DEEP_LANGS.has(language)) return 'deep';
+  if (PARTIAL_LANGS.has(language) || language === 'asset' || language === 'generic') return 'partial';
+  return 'unknown';
+}
+
+function languageRole(language) {
+  if (['json', 'yaml', 'toml'].includes(language)) return 'config';
+  if (['dockerfile', 'docker-compose', 'makefile'].includes(language)) return 'build';
+  if (language === 'github-actions') return 'ci';
+  if (language === 'shell') return 'script';
+  if (language === 'sql') return 'data';
+  if (language === 'asset') return 'asset';
+  if (language === 'unknown') return 'unknown';
+  return 'source';
+}
+
+function analysisNote(language) {
+  if (DEEP_LANGS.has(language)) return 'Browser worker deep heuristic for supported imports; backend analysis is more authoritative.';
+  if (PARTIAL_LANGS.has(language)) return 'Browser worker partial heuristic; backend language coverage report is more authoritative.';
+  return 'Visible in map, but no parser hint is available.';
+}
+
+function buildLanguageCoverage(nodes) {
+  const buckets = { deep: 0, partial: 0, unknown: 0 };
+  const byLanguage = new Map();
+  nodes.forEach((node) => {
+    const confidence = analysisConfidence(node.language);
+    buckets[confidence] = (buckets[confidence] || 0) + 1;
+    const existing = byLanguage.get(node.language) || {
+      language: node.language,
+      display: displayLang(node.language),
+      role: languageRole(node.language),
+      tier: confidence,
+      analysis_confidence: confidence,
+      parser_available: true,
+      files: 0,
+      examples: [],
+      note: analysisNote(node.language),
+    };
+    existing.files += 1;
+    if (existing.examples.length < 3) existing.examples.push(node.id);
+    byLanguage.set(node.language, existing);
+  });
+  const total = nodes.length;
+  const confidence = {};
+  ['deep', 'partial', 'unknown'].forEach((name) => {
+    confidence[name] = { files: buckets[name] || 0, percent: total ? Math.round(((buckets[name] || 0) / total) * 1000) / 10 : 0 };
+  });
+  return {
+    total_files: total,
+    confidence,
+    deep: confidence.deep,
+    partial: confidence.partial,
+    unknown: confidence.unknown,
+    languages: [...byLanguage.values()].sort((a, b) => b.files - a.files || a.language.localeCompare(b.language)),
   };
 }
 
@@ -161,6 +255,34 @@ function extname(path) {
   const base = basename(path);
   const idx = base.lastIndexOf('.');
   return idx >= 0 ? base.slice(idx).toLowerCase() : '';
+}
+
+function displayLang(lang) {
+  return ({
+    python: 'Python',
+    javascript: 'JavaScript',
+    typescript: 'TypeScript',
+    tsx: 'TSX',
+    go: 'Go',
+    c: 'C',
+    cpp: 'C/C++',
+    java: 'Java',
+    kotlin: 'Kotlin',
+    rust: 'Rust',
+    csharp: 'C#',
+    php: 'PHP',
+    ruby: 'Ruby',
+    json: 'JSON',
+    yaml: 'YAML',
+    toml: 'TOML',
+    dockerfile: 'Dockerfile',
+    'docker-compose': 'Docker Compose',
+    makefile: 'Makefile',
+    shell: 'Shell',
+    sql: 'SQL',
+    'github-actions': 'GitHub Actions',
+    unknown: 'Unknown',
+  })[lang] || lang || 'Unknown';
 }
 
 function stem(path) {
@@ -300,6 +422,19 @@ function extractImports(file) {
     case 'java':
     case 'kotlin':
       return extractJvmImports(file);
+    case 'rust':
+    case 'csharp':
+    case 'php':
+    case 'ruby':
+    case 'shell':
+    case 'sql':
+    case 'makefile':
+    case 'dockerfile':
+    case 'docker-compose':
+    case 'github-actions':
+    case 'generic':
+    case 'unknown':
+      return extractGenericPartialImports(file);
     default:
       return [];
   }
@@ -390,6 +525,37 @@ function extractJvmImports(file) {
   return imports;
 }
 
+function extractGenericPartialImports(file) {
+  const imports = [];
+  const lines = file.text.split(/\r?\n/);
+  lines.forEach((line, index) => {
+    const lineNo = index + 1;
+    let match = line.match(/^\s*mod\s+([A-Za-z_][\w]*)\s*;/);
+    if (match) imports.push({ type: 'rust-module', spec: match[1], line: lineNo });
+    match = line.match(/^\s*use\s+([\w:]+)\s*;/);
+    if (match) imports.push({ type: 'generic-path', spec: match[1], line: lineNo });
+    match = line.match(/^\s*using\s+([A-Z][\w.]+)\s*;/);
+    if (match) imports.push({ type: 'csharp-using', spec: match[1], line: lineNo });
+    match = line.match(/(?:^|<\?php\s*)(?:require_once|require|include_once|include)\s*\(?\s*['"]([^'"]+)['"]/);
+    if (match) imports.push({ type: 'generic-path', spec: match[1], line: lineNo });
+    match = line.match(/^\s*(?:require_relative|require|load)\s+['"]([^'"]+)['"]/);
+    if (match) imports.push({ type: 'generic-path', spec: match[1], line: lineNo });
+    match = line.match(/^\s*(?:source|\.)\s+([^\s;&|]+)/);
+    if (match) imports.push({ type: 'generic-path', spec: stripQuotes(match[1]), line: lineNo });
+    match = line.match(/^\s*(?:\\i|\.read|SOURCE)\s+([^\s;]+)/i);
+    if (match) imports.push({ type: 'generic-path', spec: stripQuotes(match[1]), line: lineNo });
+    match = line.match(/^\s*(?:include|-?include)\s+([^\s#]+)/);
+    if (match) imports.push({ type: 'generic-path', spec: stripQuotes(match[1]), line: lineNo });
+    match = line.match(/^\s*(?:COPY|ADD)\s+(?:--[^\s]+\s+)*([^\s\[]+|"[^"]+"|'[^']+')/);
+    if (match) imports.push({ type: 'generic-path', spec: stripQuotes(match[1]), line: lineNo });
+  });
+  return imports;
+}
+
+function stripQuotes(value) {
+  return String(value || '').replace(/^['"]|['"]$/g, '');
+}
+
 function resolveImport(entry, file, fileMap, packageMap, tsConfig, goModule, pythonModules, jvmPackages, cIncludeDirs) {
   switch (entry.type) {
     case 'python-import':
@@ -404,6 +570,12 @@ function resolveImport(entry, file, fileMap, packageMap, tsConfig, goModule, pyt
       return resolveC(entry.spec, file.path, fileMap, cIncludeDirs, entry.quoted);
     case 'jvm':
       return resolveJvm(entry.spec, jvmPackages);
+    case 'generic-path':
+      return resolvePathLike(entry.spec, file.path, fileMap);
+    case 'rust-module':
+      return resolveRustModule(entry.spec, file.path, fileMap);
+    case 'csharp-using':
+      return resolveCSharp(entry.spec, fileMap);
     default:
       return [];
   }
@@ -508,6 +680,44 @@ function resolveJvm(spec, jvmPackages) {
   if (jvmPackages.has(spec)) return dedupe(jvmPackages.get(spec));
   if (spec.endsWith('.*')) return dedupe(jvmPackages.get(spec) || []);
   return [];
+}
+
+function resolvePathLike(spec, filePath, fileMap) {
+  const clean = stripQuotes(String(spec || '').trim());
+  if (!clean || /^[a-z][a-z0-9+.-]*:/i.test(clean)) return [];
+  const candidates = [];
+  const fromDir = dirname(filePath);
+  candidates.push(normalizePath(joinPath(fromDir, clean)));
+  if (clean.startsWith('/')) candidates.push(normalizePath(clean.slice(1)));
+  const exts = ['', '.rb', '.php', '.rs', '.cs', '.sql', '.sh', '.yml', '.yaml', '.toml', '.json'];
+  const expanded = [];
+  candidates.forEach((candidate) => {
+    exts.forEach((ext) => expanded.push(normalizePath(candidate + ext)));
+  });
+  return firstExistingCandidates(expanded, fileMap);
+}
+
+function resolveRustModule(spec, filePath, fileMap) {
+  const fromDir = dirname(filePath);
+  return firstExistingCandidates([
+    normalizePath(joinPath(fromDir, `${spec}.rs`)),
+    normalizePath(joinPath(fromDir, spec, 'mod.rs')),
+  ], fileMap);
+}
+
+function resolveCSharp(spec, fileMap) {
+  const symbol = String(spec || '').split('.').pop();
+  if (!symbol || spec.startsWith('System') || spec.startsWith('Microsoft')) return [];
+  const found = [];
+  fileMap.forEach((file, path) => {
+    if (file.language !== 'csharp') return;
+    if (new RegExp(`\\b(class|interface|record|struct)\\s+${escapeRegExp(symbol)}\\b`).test(file.text)) found.push(path);
+  });
+  return dedupe(found);
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function joinPath(...parts) {

@@ -42,6 +42,8 @@ SKIP_EXTENSIONS = {
     '.mp3', '.mp4', '.wav', '.avi',
     '.zip', '.tar', '.gz', '.rar', '.7z',
     '.pdf', '.docx', '.xlsx',
+    '.md', '.mdx', '.rst', '.adoc', '.txt',
+    '.log', '.out', '.err',
     '.db', '.sqlite', '.sqlite3',
     '.lock',  # package-lock.json is useful but not for Phase 0
 }
