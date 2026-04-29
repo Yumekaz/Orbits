@@ -29,9 +29,8 @@ test.describe('fixture-specific behavior', () => {
     await openMenu(page, 'btn-view');
     await page.locator('#edge-mode-runtime').click();
     await expect.poll(async () => (await getDebug(page)).edgeMode).toBe('runtime');
-    debug = await getDebug(page);
-    expect(debug.visibleEdgeCount).toBe(2);
-    expect(debug.visibleDynamicEdgeCount).toBe(2);
+    await expect.poll(async () => (await getDebug(page)).visibleEdgeCount).toBe(2);
+    await expect.poll(async () => (await getDebug(page)).visibleDynamicEdgeCount).toBe(2);
 
     await page.locator('#edge-mode-static').click();
     await expect.poll(async () => (await getDebug(page)).edgeMode).toBe('static');
@@ -53,9 +52,8 @@ test.describe('fixture-specific behavior', () => {
     await openMenu(page, 'btn-view');
     await page.locator('#edge-mode-runtime').click();
     await expect.poll(async () => (await getDebug(page)).edgeMode).toBe('runtime');
-    debug = await getDebug(page);
-    expect(debug.visibleEdgeCount).toBe(2);
-    expect(debug.visibleDynamicEdgeCount).toBe(2);
+    await expect.poll(async () => (await getDebug(page)).visibleEdgeCount).toBe(2);
+    await expect.poll(async () => (await getDebug(page)).visibleDynamicEdgeCount).toBe(2);
 
     await page.locator('#edge-mode-static').click();
     await expect.poll(async () => (await getDebug(page)).edgeMode).toBe('static');
