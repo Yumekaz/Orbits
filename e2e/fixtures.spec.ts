@@ -81,7 +81,11 @@ test.describe('fixture-specific behavior', () => {
     await expect(page.locator('#imeta')).toContainText('stale');
     await expect(page.locator('#ihistory')).toContainText('Blame');
 
-    await clickNode(page, 'runtime/generated.ts');
+    await page.getByTestId('btn-search').click();
+    await page.getByTestId('search-input').fill('runtime/generated');
+    await expect(page.locator('#search-status')).toContainText('match');
+    await page.getByTestId('search-input').press('Enter');
+    await expect.poll(async () => (await getDebug(page)).selectedNodeId).toBe('runtime/generated.ts');
     await expect(page.locator('#imeta')).toContainText('Runtime-only node');
   });
 

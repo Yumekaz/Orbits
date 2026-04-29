@@ -1014,13 +1014,15 @@ def run_node_runtime_trace(root: Path, config: NodeRuntimeTraceConfig, verbose: 
     for arg in config.args:
         command.extend(['--arg', arg])
 
+    trace_timeout = int(config.timeout_s)
+    runner_timeout = None if trace_timeout <= 0 else max(15, trace_timeout + 15)
     try:
         proc = subprocess.run(
             command,
             cwd=str(root.resolve()),
             capture_output=True,
             text=True,
-            timeout=max(5, int(config.timeout_s) + 5),
+            timeout=runner_timeout,
         )
     except subprocess.TimeoutExpired as exc:
         if not output_path.exists():
